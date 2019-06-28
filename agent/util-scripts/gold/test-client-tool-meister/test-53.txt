@@ -1,0 +1,71 @@
++++ Running test-53 test-client-tool-meister 
+"mpstat" tool is now registered for host "testhost.example.com" in group "default"
+--- Finished test-53 test-client-tool-meister (status=0)
++++ pbench tree state
+/var/tmp/pbench-test-utils/pbench
+/var/tmp/pbench-test-utils/pbench/mock-run
+/var/tmp/pbench-test-utils/pbench/mock-run/tm
+/var/tmp/pbench-test-utils/pbench/mock-run/tm/pbench-tool-data-sink.err
+/var/tmp/pbench-test-utils/pbench/mock-run/tm/pbench-tool-data-sink.log
+/var/tmp/pbench-test-utils/pbench/mock-run/tm/pbench-tool-data-sink.out
+/var/tmp/pbench-test-utils/pbench/mock-run/tm/pbench-tool-meister.log
+/var/tmp/pbench-test-utils/pbench/mock-run/tm/redis.conf
+/var/tmp/pbench-test-utils/pbench/mock-run/tm/redis.log
+/var/tmp/pbench-test-utils/pbench/pbench.log
+/var/tmp/pbench-test-utils/pbench/tmp
+/var/tmp/pbench-test-utils/pbench/tools-v1-default
+/var/tmp/pbench-test-utils/pbench/tools-v1-default/testhost.example.com
+/var/tmp/pbench-test-utils/pbench/tools-v1-default/testhost.example.com/mpstat
+=== /var/tmp/pbench-test-utils/pbench/tools-v1-default/testhost.example.com/mpstat:
+--- pbench tree state
++++ pbench.log file contents
+[debug][1900-01-01T00:00:00.000000] tool_opts: ""
+[info][1900-01-01T00:00:00.000000] "mpstat" tool is now registered for host "testhost.example.com" in group "default"
+--- pbench.log file contents
++++ mock-run/tm/pbench-tool-data-sink.err file contents
+Bottle v#.##.## server starting up (using DataSinkWSGIRefServer())...
+Listening on http://localhost:8080/
+Hit Ctrl-C to quit.
+
+--- mock-run/tm/pbench-tool-data-sink.err file contents
++++ mock-run/tm/pbench-tool-data-sink.log file contents
+INFO pbench-tool-data-sink main -- params_key (tds-default): b'{"channel": "tool-meister-chan", "benchmark_run_dir": "/var/tmp/pbench-test-utils/pbench/mock-run"}'
+INFO pbench-tool-data-sink watcher -- watcher started
+INFO pbench-tool-data-sink main -- Running...
+INFO pbench-tool-data-sink watcher -- Terminating bottle server ...
+INFO pbench-tool-data-sink main -- Remove pid file ... (pbench-tool-data-sink.pid)
+--- mock-run/tm/pbench-tool-data-sink.log file contents
++++ mock-run/tm/pbench-tool-data-sink.out file contents
+--- mock-run/tm/pbench-tool-data-sink.out file contents
++++ mock-run/tm/pbench-tool-meister.log file contents
+INFO pbench-tool-meister main -- params_key (tm-default-testhost.example.com): b'{"hostname": "testhost.example.com", "channel": "tool-meister-chan", "group": "default", "benchmark_run_dir": "/var/tmp/pbench-test-utils/pbench/mock-run", "tools": {"mpstat": ""}}'
+INFO pbench-tool-meister start -- mpstat: start_tool -- screen -dmS pbench-tool-mpstat-default-0 /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --iteration=0-iter-zero --group=default --dir=/var/tmp/tm.default.NNNNN.nnnnnnnn/0-iter-zero/sample42 ""
+INFO pbench-tool-meister stop -- mpstat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --stop --iteration=0-iter-zero --group=default --dir=/var/tmp/tm.default.NNNNN.nnnnnnnn/0-iter-zero/sample42 ""
+INFO pbench-tool-meister wait -- wait 0-iter-zero sample42
+INFO pbench-tool-meister postprocess -- post-process 0-iter-zero sample42
+INFO pbench-tool-meister send_tools -- testhost.example.com: send_tool 0-iter-zero sample42
+INFO pbench-tool-meister start -- mpstat: start_tool -- screen -dmS pbench-tool-mpstat-default-1 /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --iteration=1-iter-one --group=default --dir=/var/tmp/tm.default.NNNNN.nnnnnnnn/1-iter-one/sample42 ""
+INFO pbench-tool-meister stop -- mpstat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --stop --iteration=1-iter-one --group=default --dir=/var/tmp/tm.default.NNNNN.nnnnnnnn/1-iter-one/sample42 ""
+INFO pbench-tool-meister wait -- wait 1-iter-one sample42
+INFO pbench-tool-meister postprocess -- post-process 1-iter-one sample42
+INFO pbench-tool-meister send_tools -- testhost.example.com: send_tool 1-iter-one sample42
+INFO pbench-tool-meister main -- terminating
+INFO pbench-tool-meister main -- Remove pid file ... (pbench-tool-meister.pid)
+--- mock-run/tm/pbench-tool-meister.log file contents
++++ mock-run/tm/redis.conf file contents
+bind localhost
+daemonize yes
+dir /var/tmp/pbench-test-utils/pbench/mock-run/tm
+dbfilename pbench-redis.rdb
+logfile /var/tmp/pbench-test-utils/pbench/mock-run/tm/redis.log
+pidfile /var/tmp/pbench-test-utils/pbench/mock-run/tm/redis_17001.pid
+port 17001
+--- mock-run/tm/redis.conf file contents
++++ mock-run/tm/redis.log file contents
+# Configuration loaded
+# Server initialized
+* Ready to accept connections
+# User requested shutdown...
+* Removing the pid file.
+# Redis is now ready to exit, bye bye...
+--- mock-run/tm/redis.log file contents

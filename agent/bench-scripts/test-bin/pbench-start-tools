@@ -1,35 +1,40 @@
 #!/bin/bash
 
-echo "$0 $*" >> $_testlog
+echo "${0} ${*}" >> ${_testlog}
 
-opts=$(getopt -q -o d:g: --longoptions "dir:,group:,iteration:" -n "getopt.sh" -- "$@");
-eval set -- "$opts";
+group="__bad_group__"
+iteration="__bad_iteration__"
+sample="__bad_sample__"
+
+opts=$(getopt -q -o g:i:s: --longoptions "group:,iteration:,sample:" -n "getopt.sh" -- "${@}")
+eval set -- "${opts}"
+
 while true; do
-	case "$1" in
+	opt="${1}"
+	shift
+	case "${opt}" in
 		-g|--group)
-		shift;
-		if [ -n "$1" ]; then
-			group="$1"
-			shift;
-		fi
-		;;
-		-d|--dir)
-		shift;
-		if [ -n "$1" ]; then
-			dir="$1"
-			shift;
+		if [[ -n "${1}" ]]; then
+			group="${1}"
+			shift
 		fi
 		;;
 		-i|--iteration)
-		shift;
-		if [ -n "$1" ]; then
-			shift;
+		if [[ -n "${1}" ]]; then
+                        iteration="${1}"
+			shift
+		fi
+		;;
+		-s|--sample)
+		if [[ -n "${1}" ]]; then
+                        sample="${1}"
+			shift
 		fi
 		;;
 		--)
-		shift;
-		break;
+		shift
+		break
 		;;
 	esac
 done
-mkdir -p "$dir/tools-$group"
+mkdir -p "${benchmark_run_dir}/${iteration}/${sample}/tools-${group}"

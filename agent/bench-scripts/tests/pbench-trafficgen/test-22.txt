@@ -1,5 +1,5 @@
 +++ Running test-22 pbench-trafficgen
-tool trigger strings for start: "Starting binary-search" and for stop: "Finished binary-search" are now registered for tool group: default
+tool trigger strings for start: "Starting binary-search" and for stop: "Finished binary-search" are now registered for tool group: "default"
 [warn][1900-01-01T00:00:00.000000] [pbench-trafficgen] ignoring --config="test-22_tg:trex-profile_r:5000000_fs:74_nf:1000_fm:si,di,sp,dp,protocol_td:bi,uni,revuni_ml:0.0_tt:os_" in favor of --rundir="/var/tmp/pbench-test-bench/pbench-agent"
 Total number of benchmark iterations: 3
 Starting iteration[1-bidirectional-74B-1000flows-0.0pct_drop] (1 of 3)
@@ -32141,10 +32141,11 @@ Iteration 3-revunidirectional-74B-1000flows-0.0pct_drop complete (3 of 3), with 
 /var/tmp/pbench-test-bench/pbench-agent/result.json
 /var/tmp/pbench-test-bench/pbench-agent/result.txt
 /var/tmp/pbench-test-bench/pbench-agent/tmp
-/var/tmp/pbench-test-bench/pbench-agent/tool-triggers
-/var/tmp/pbench-test-bench/pbench-agent/tools-default
-/var/tmp/pbench-test-bench/pbench-agent/tools-default/mpstat
-/var/tmp/pbench-test-bench/pbench-agent/tools-default/sar
+/var/tmp/pbench-test-bench/pbench-agent/tools-v1-default
+/var/tmp/pbench-test-bench/pbench-agent/tools-v1-default/__trigger__
+/var/tmp/pbench-test-bench/pbench-agent/tools-v1-default/testhost.example.com
+/var/tmp/pbench-test-bench/pbench-agent/tools-v1-default/testhost.example.com/mpstat
+/var/tmp/pbench-test-bench/pbench-agent/tools-v1-default/testhost.example.com/sar
 /var/tmp/pbench-test-bench/pbench-agent/trex_cfg.yaml
 --- pbench tree state
 +++ pbench.log file contents
@@ -32172,4 +32173,6 @@ Iteration 3-revunidirectional-74B-1000flows-0.0pct_drop complete (3 of 3), with 
 /var/tmp/pbench-test-bench/opt/pbench-agent/unittest-scripts/pbench-collect-sysinfo --sysinfo=none --check
 /var/tmp/pbench-test-bench/opt/pbench-agent/unittest-scripts/pbench-metadata-log --group=default --dir=/var/tmp/pbench-test-bench/pbench-agent beg
 /var/tmp/pbench-test-bench/opt/pbench-agent/unittest-scripts/pbench-metadata-log --group=default --dir=/var/tmp/pbench-test-bench/pbench-agent end
+/var/tmp/pbench-test-bench/opt/pbench-agent/unittest-scripts/pbench-tool-meister-start default
+/var/tmp/pbench-test-bench/opt/pbench-agent/unittest-scripts/pbench-tool-meister-stop
 --- test-execution.log file contents

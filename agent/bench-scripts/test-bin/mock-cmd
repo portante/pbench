@@ -1,16 +1,21 @@
 #!/bin/bash
 
-echo "$0 $*" >> $_testlog
+if [[ -z "${*}" ]]; then
+    _cmdline="${0}"
+else
+    _cmdline="${0} ${*}"
+fi
+echo "${_cmdline}" >> ${_testlog}
 
-prog=$(basename "$0")
-args=( "$@" )
+prog=$(basename "${0}")
+args=( "${@}" )
 lastidx=$((${#args[@]} - 1))
 # avoid "bad array subscript" error
-if [[ "$lastidx" -lt 0 ]] ;then
-   exit 0
+if [[ "${lastidx}" -lt 0 ]]; then
+    exit 0
 fi
 
-last=${args[$lastidx]}
-if [[ "$prog" == "pbench-metadata-log" ]] && [[ "$last" == "beg" ]];then
+last=${args[${lastidx}]}
+if [[ "${prog}" == "pbench-metadata-log" ]] && [[ "${last}" == "beg" ]]; then
     echo [pbench] > ${benchmark_run_dir}/metadata.log
 fi
