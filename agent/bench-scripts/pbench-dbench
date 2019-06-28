@@ -20,6 +20,7 @@ pbench_bin="`cd ${script_path}/..; /bin/pwd`"
 
 benchmark_rpm=$script_name
 export benchmark="dbench"
+<<<<<<< HEAD
 if [[ -z "${benchmark_bin}" ]]; then
 	benchmark_bin="$(resolve_benchmark_bin "${benchmark}")"
 	if [[ -z "${benchmark_bin}" ]]; then
@@ -31,6 +32,10 @@ ver="$(pbench-config version ${benchmark})"
 if [[ -z "${ver}" ]]; then
 	error_log "${script_name}: package version is missing in config file"
 	exit 1
+=======
+if [[ -z "$benchmark_bin" ]]; then
+	benchmark_bin=/usr/local/bin/$benchmark
+>>>>>>> First pass implementation of the "Tool Meister"
 fi
 
 # Every bench-script follows a similar sequence:
@@ -338,6 +343,19 @@ fi
 
 pbench-metadata-log --group=$tool_group --dir=$benchmark_run_dir beg
 
+<<<<<<< HEAD
+=======
+function interrupt() {
+	# On abnormal exit, stop the tool meister ...
+	pbench-tool-meister-stop
+	if [[ ${?} != 0 ]]; then
+		error_log "[${script_name}]: failed to stop the tool meisters on interrupt."
+	fi
+	# ... and make sure that the metadata log exists and is complete.
+	pbench-metadata-log --group=$tool_group --dir=${benchmark_run_dir} int
+	return 0
+}
+>>>>>>> First pass implementation of the "Tool Meister"
 trap "interrupt" INT QUIT TERM
 
 for thread_count in `echo $thread_counts | sed -e s/,/" "/g`; do

@@ -1,6 +1,9 @@
 +++ Running test-53 test-client-tool-meister 
 "mpstat" tool is now registered for host "testhost.example.com" in group "default"
+<<<<<<< HEAD
 "iostat" tool is now registered for host "testhost.example.com" in group "default"
+=======
+>>>>>>> First pass implementation of the "Tool Meister"
 --- Finished test-53 test-client-tool-meister (status=0)
 +++ pbench tree state
 /var/tmp/pbench-test-utils/pbench
@@ -9,6 +12,7 @@
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com
+<<<<<<< HEAD
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/iostat
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/iostat/csv
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/iostat/iostat-postprocess.err
@@ -16,6 +20,8 @@
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/iostat/iostat-stderr.txt
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/iostat/iostat-stdout.txt
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/iostat/iostat.cmd
+=======
+>>>>>>> First pass implementation of the "Tool Meister"
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/mpstat
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/mpstat/mpstat-postprocess.err
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/mpstat/mpstat-postprocess.out
@@ -25,10 +31,13 @@
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/mpstat/mpstat-stop-postprocess.out
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/mpstat/mpstat.cmd
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/mpstat/online-cpus.txt
+<<<<<<< HEAD
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/tm-iostat-postprocess.err
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/tm-iostat-postprocess.out
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/tm-iostat-stop.err
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/tm-iostat-stop.out
+=======
+>>>>>>> First pass implementation of the "Tool Meister"
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/tm-mpstat-postprocess.err
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/tm-mpstat-postprocess.out
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com/tm-mpstat-stop.err
@@ -37,6 +46,7 @@
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com
+<<<<<<< HEAD
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/iostat
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/iostat/csv
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/iostat/iostat-postprocess.err
@@ -44,6 +54,8 @@
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/iostat/iostat-stderr.txt
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/iostat/iostat-stdout.txt
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/iostat/iostat.cmd
+=======
+>>>>>>> First pass implementation of the "Tool Meister"
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/mpstat
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/mpstat/mpstat-postprocess.err
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/mpstat/mpstat-postprocess.out
@@ -53,10 +65,13 @@
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/mpstat/mpstat-stop-postprocess.out
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/mpstat/mpstat.cmd
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/mpstat/online-cpus.txt
+<<<<<<< HEAD
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/tm-iostat-postprocess.err
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/tm-iostat-postprocess.out
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/tm-iostat-stop.err
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/tm-iostat-stop.out
+=======
+>>>>>>> First pass implementation of the "Tool Meister"
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/tm-mpstat-postprocess.err
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/tm-mpstat-postprocess.out
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/tm-mpstat-stop.err
@@ -72,16 +87,23 @@
 /var/tmp/pbench-test-utils/pbench/tmp
 /var/tmp/pbench-test-utils/pbench/tools-v1-default
 /var/tmp/pbench-test-utils/pbench/tools-v1-default/testhost.example.com
+<<<<<<< HEAD
 /var/tmp/pbench-test-utils/pbench/tools-v1-default/testhost.example.com/iostat
 /var/tmp/pbench-test-utils/pbench/tools-v1-default/testhost.example.com/mpstat
 === /var/tmp/pbench-test-utils/pbench/tools-v1-default/testhost.example.com/iostat:
+=======
+/var/tmp/pbench-test-utils/pbench/tools-v1-default/testhost.example.com/mpstat
+>>>>>>> First pass implementation of the "Tool Meister"
 === /var/tmp/pbench-test-utils/pbench/tools-v1-default/testhost.example.com/mpstat:
 --- pbench tree state
 +++ pbench.log file contents
 [debug][1900-01-01T00:00:00.000000] tool_opts: ""
 [info][1900-01-01T00:00:00.000000] "mpstat" tool is now registered for host "testhost.example.com" in group "default"
+<<<<<<< HEAD
 [debug][1900-01-01T00:00:00.000000] tool_opts: ""
 [info][1900-01-01T00:00:00.000000] "iostat" tool is now registered for host "testhost.example.com" in group "default"
+=======
+>>>>>>> First pass implementation of the "Tool Meister"
 --- pbench.log file contents
 +++ mock-run/tm/pbench-tool-data-sink.err file contents
 Bottle v#.##.## server starting up (using DataSinkWsgiServer(handler_class=<class '__main__.DataSinkWsgiServer.__init__.<locals>.DataSinkWsgiRequestHandler'>))...
@@ -90,7 +112,11 @@ Hit Ctrl-C to quit.
 
 --- mock-run/tm/pbench-tool-data-sink.err file contents
 +++ mock-run/tm/pbench-tool-data-sink.log file contents
+<<<<<<< HEAD
 INFO pbench-tool-data-sink main -- params_key (tds-default): b'{"benchmark_run_dir": "/var/tmp/pbench-test-utils/pbench/mock-run", "channel": "tool-meister-chan"}'
+=======
+INFO pbench-tool-data-sink main -- params_key (tds-default): b'{"channel": "tool-meister-chan", "benchmark_run_dir": "/var/tmp/pbench-test-utils/pbench/mock-run"}'
+>>>>>>> First pass implementation of the "Tool Meister"
 INFO pbench-tool-data-sink run -- Running Bottle web server ...
 INFO pbench-tool-data-sink execute -- Terminate bottle server
 INFO pbench-tool-data-sink run -- Bottle web server exited
@@ -117,6 +143,7 @@ port 17001
 # Redis is now ready to exit, bye bye...
 --- mock-run/tm/redis.log file contents
 +++ mock-run/tm/tm-default-testhost.example.com.log file contents
+<<<<<<< HEAD
 INFO pbench-tool-meister main -- params_key (tm-default-testhost.example.com): b'{"benchmark_run_dir": "/var/tmp/pbench-test-utils/pbench/mock-run", "channel": "tool-meister-chan", "controller": "testhost.example.com", "group": "default", "hostname": "testhost.example.com", "tools": {"iostat": "", "mpstat": ""}}'
 INFO pbench-tool-meister start -- iostat: start_tool -- /usr/bin/screen -dmS pbench-tool-default-iostat /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/iostat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com 
 INFO pbench-tool-meister start -- mpstat: start_tool -- /usr/bin/screen -dmS pbench-tool-default-mpstat /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com 
@@ -138,14 +165,31 @@ INFO pbench-tool-meister wait -- waiting for stop mpstat
 INFO pbench-tool-meister postprocess -- iostat: post-process_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/iostat --postprocess --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com 
 INFO pbench-tool-meister postprocess -- mpstat: post-process_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --postprocess --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com 
 INFO pbench-tool-meister wait -- waiting for post-process iostat
+=======
+INFO pbench-tool-meister main -- params_key (tm-default-testhost.example.com): b'{"benchmark_run_dir": "/var/tmp/pbench-test-utils/pbench/mock-run", "channel": "tool-meister-chan", "controller": "testhost.example.com", "group": "default", "hostname": "testhost.example.com", "tools": {"mpstat": ""}}'
+INFO pbench-tool-meister start -- mpstat: start_tool -- /usr/bin/screen -dmS pbench-tool-default-mpstat /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com 
+INFO pbench-tool-meister stop -- mpstat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --stop --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com 
+INFO pbench-tool-meister wait -- waiting for stop mpstat
+INFO pbench-tool-meister postprocess -- mpstat: post-process_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --postprocess --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com 
+INFO pbench-tool-meister wait -- waiting for post-process mpstat
+INFO pbench-tool-meister send_tools -- testhost.example.com: send_tools (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default
+INFO pbench-tool-meister start -- mpstat: start_tool -- /usr/bin/screen -dmS pbench-tool-default-mpstat /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com 
+INFO pbench-tool-meister stop -- mpstat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --stop --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com 
+INFO pbench-tool-meister wait -- waiting for stop mpstat
+INFO pbench-tool-meister postprocess -- mpstat: post-process_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --postprocess --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com 
+>>>>>>> First pass implementation of the "Tool Meister"
 INFO pbench-tool-meister wait -- waiting for post-process mpstat
 INFO pbench-tool-meister send_tools -- testhost.example.com: send_tools (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default
 INFO pbench-tool-meister main -- terminating
 INFO pbench-tool-meister main -- Remove pid file ... (tm-default-testhost.example.com.pid)
 --- mock-run/tm/tm-default-testhost.example.com.log file contents
 +++ test-execution.log file contents
+<<<<<<< HEAD
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x iostat
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x mpstat
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x iostat
+=======
+/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x mpstat
+>>>>>>> First pass implementation of the "Tool Meister"
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x mpstat
 --- test-execution.log file contents

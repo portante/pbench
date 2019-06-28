@@ -36,6 +36,7 @@ pbench_bin="`cd ${script_path}/..; /bin/pwd`"
 
 benchmark_rpm=$script_name
 export benchmark="netperf"
+<<<<<<< HEAD
 if [[ -z "${benchmark_bin}" ]]; then
         benchmark_bin="$(resolve_benchmark_bin "${benchmark}")"
 	if [[ -z "${benchmark_bin}" ]]; then
@@ -50,6 +51,10 @@ if [[ -z "${ver}" ]]; then
 fi
 
 # Formatting spacing for output report.
+=======
+benchmark_bin=/usr/bin/$benchmark
+ver=2.7.0
+>>>>>>> First pass implementation of the "Tool Meister"
 spacing=25
 
 # Every bench-script follows a similar sequence:
@@ -450,6 +455,19 @@ fi
 
 pbench-metadata-log --group=$tool_group --dir=$benchmark_run_dir beg
 
+<<<<<<< HEAD
+=======
+function interrupt() {
+	# On abnormal exit, stop the tool meister ...
+	pbench-tool-meister-stop
+	if [[ ${?} != 0 ]]; then
+		error_log "[${script_name}]: failed to stop the tool meisters on interrupt."
+	fi
+	# ... and make sure that the metadata log exists and is complete.
+	pbench-metadata-log --group=$tool_group --dir=${benchmark_run_dir} int
+	return 0
+}
+>>>>>>> First pass implementation of the "Tool Meister"
 trap "interrupt" INT QUIT TERM
 
 # start the server processes

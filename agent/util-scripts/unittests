@@ -203,7 +203,11 @@ function _verify_output {
            -e 's;\(tm\.[a-z-]*\)\.[0-9][0-9]*\.[a-z0-9_][a-z0-9_]*;\1.NNNNN.nnnnnnnn;g' \
            -e 's;raw_size = [0-9][0-9]*;raw_size = #####;g' \
            -e 's;v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*;v#.##.##;g' \
+<<<<<<< HEAD
            -e 's;"pid": [0-9][0-9]*\([,}]\);"pid": NNNNN\1;g' \
+=======
+           -e 's;"pid": [0-9][0-9]*};"pid": NNNNN};g' \
+>>>>>>> First pass implementation of the "Tool Meister"
            -e 's;tar up [0-9][0-9]* bytes;tar up ##### bytes;g' \
            ${_testout}
     if [[ ${?} -ne 0 ]]; then

@@ -27,11 +27,15 @@ pbench_bin="`cd ${script_path}/..; /bin/pwd`"
 export benchmark="uperf"
 benchmark_rpm=${benchmark}
 if [[ -z "${benchmark_bin}" ]]; then
+<<<<<<< HEAD
 	benchmark_bin="$(resolve_benchmark_bin "${benchmark}")"
 	if [[ -z "${benchmark_bin}" ]]; then
 		error_log "${script_name}: ${benchmark} executable not found on PATH=${PATH}"
 		exit 1
 	fi
+=======
+	benchmark_bin=/usr/bin/${benchmark}
+>>>>>>> First pass implementation of the "Tool Meister"
 fi
 ver="$(pbench-config version ${benchmark})"
 if [[ -z "${ver}" ]]; then
@@ -509,6 +513,19 @@ fi
 
 pbench-metadata-log --group=$tool_group --dir=$benchmark_run_dir beg
 
+<<<<<<< HEAD
+=======
+function interrupt() {
+	# On abnormal exit, stop the tool meister ...
+	pbench-tool-meister-stop
+	if [[ ${?} != 0 ]]; then
+		error_log "[${script_name}]: failed to stop the tool meisters on interrupt."
+	fi
+	# ... and make sure that the metadata log exists and is complete.
+	pbench-metadata-log --group=$tool_group --dir=${benchmark_run_dir} int
+	return 0
+}
+>>>>>>> First pass implementation of the "Tool Meister"
 trap "interrupt" INT QUIT TERM
 
 # start the server processes
