@@ -40,6 +40,8 @@ import os
 import json
 import logging
 import tempfile
+import subprocess
+import pathlib
 import daemon
 import pidfile
 import redis
@@ -53,7 +55,7 @@ class Tool(object):
 
     """
     def __init__(self, name, group, iteration, sample, tool_opts, pbench_bin,
-                dir, logger):
+                sample_dir, logger):
         self.logger = logger
         self.name = name
         self.group = group
@@ -63,21 +65,40 @@ class Tool(object):
         self.iteration_num = iteration.split('-', 1)[0]
         self.tool_opts = tool_opts
         self.pbench_bin = pbench_bin
-        self.dir = dir
+        self.sample_dir = sample_dir
         # screen_name="pbench-tool-$name-$group-$iteration_num"
-        self.screen_name = "pbench-tool-{}-{}-{}".format(
-            name, group, self.iteration_num)
+        self.screen_name = "pbench-tool-{}-{}-{}-{}".format(
+                name, group, self.iteration_num, sample)
+        self.start_process = None
+        self.stop_process = None
+        self.post_process = None
 
     def start(self):
         """Creates the background `screen` process running the tool's "start"
         operation.
         """
+        if self.start_process is not None \
+                or self.stop_process is not None \
+                or self.post_process is not None:
+            self.logger.error(
+                    "Tool(%s) has unexpected process already running",
+                    self.name)
+            return
         # screen -dmS $screen_name $pbench_bin/tool-scripts/$name --start --iteration=$iteration --group=$group --dir=$dir "${tool_opts[@]}"
-        self.logger.info("{}: start_tool -- screen -dmS {}"
-                " {}/tool-scripts/{} --start"
-                " --iteration={} --group={} --dir={} \"{}\"".format(
-                self.name, self.screen_name, self.pbench_bin, self.name, self.iteration,
-                self.group, self.dir, self.tool_opts))
+        args = [
+            "/usr/bin/screen",
+            "-dmS",
+            self.screen_name,
+            "{}/tool-scripts/{}".format(self.pbench_bin, self.name),
+            "--start",
+            "--iteration={}".format(self.iteration),
+            "--group={}".format(self.group),
+            "--dir={}".format(self.sample_dir),
+            self.tool_opts
+            ]
+        self.logger.info(
+                "{}: start_tool -- {}".format(self.name, " ".join(args)))
+        self.start_process = subprocess.Popen(args)
 
     def stop(self, iteration, sample):
         """Creates the background `screen` process to running the tool's "stop"
@@ -88,22 +109,84 @@ class Tool(object):
                     iteration, self.iteration)
         assert self.sample == sample, "given sample, {}, does not match" \
                 " object's sample, {}".format(sample, self.sample)
+        if self.start_process is None:
+            self.logger.error(
+                    "Tool(%s)'s start process not already running", self.name)
+            return
+        if self.stop_process is not None:
+            self.logger.error(
+                    "Tool(%s) has unexpected stop process already running",
+                    self.name)
+            return
+        if self.post_process is not None:
+            self.logger.error(
+                    "Tool(%s) has unexpected post-process process already"
+                    " running", self.name)
+            return
         #                          $pbench_bin/tool-scripts/$name --stop  --iteration=$iteration --group=$group --dir=$dir "${tool_opts[@]}"
-        self.logger.info("{}: stop_tool -- {}/tool-scripts/{} --stop"
-                " --iteration={} --group={} --dir={} \"{}\"".format(
-                self.name, self.pbench_bin, self.name, self.iteration,
-                self.group, self.dir, self.tool_opts))
+        args = [
+            "{}/tool-scripts/{}".format(self.pbench_bin, self.name),
+            "--stop",
+            "--iteration={}".format(self.iteration),
+            "--group={}".format(self.group),
+            "--dir={}".format(self.sample_dir),
+            self.tool_opts
+            ]
+        self.logger.info(
+                "{}: stop_tool -- {}".format(self.name, " ".join(args)))
+        self.stop_process = subprocess.Popen(args)
 
     def wait(self, iteration, sample):
-        """Waits for the tool's "stop" process to complete, then waits for the tool's
-        start process to exit before return.
+        """Wait for any tool processes to complete.
+
+        Waits for the tool's "stop" process to complete, if started, then
+        waits for the tool's start process to complete. Finally, if there is a
+        post-processing process running, wait for that to complete before
+        returning.
         """
         assert self.iteration == iteration, "given iteration, {}, does not" \
                 " match object's iteration, {}".format(
                     iteration, self.iteration)
         assert self.sample == sample, "given sample, {}, does not match" \
                 " object's sample, {}".format(sample, self.sample)
-        self.logger.info("wait {} {}".format(iteration, sample))
+        if self.stop_process is not None:
+            if self.start_process is None:
+                self.logger.error(
+                        "Tool(%s) does not have a start process running",
+                        self.name)
+                return
+            if self.post_process is not None:
+                self.logger.error(
+                        "Tool(%s) has unexpected post-process process running",
+                        self.name)
+                return
+            self.logger.info(
+                    "waiting for stop {} {}".format(iteration, sample))
+            # We wait for the stop process to finish first ...
+            self.stop_process.wait()
+            self.stop_process = None
+            # ... then we wait for the start process to finish
+            self.start_process.wait()
+            self.stop_process = None
+        elif self.post_process is not None:
+            if self.start_process is not None:
+                self.logger.error(
+                        "Tool(%s) has unexpected start process running",
+                        self.name)
+                return
+            if self.stop_process is not None:
+                self.logger.error(
+                        "Tool(%s) has unexpected stop process running",
+                        self.name)
+                return
+            self.logger.info("waiting for post-process {} {}".format(
+                    iteration, sample))
+            self.post_process.wait()
+            self.post_process = None
+        else:
+            self.logger.error(
+                    "wait (%s) not called after 'stop' or 'post-process'",
+                    self.name)
 
     def postprocess(self, iteration, sample):
         """Run the tool's "post-process" action.
@@ -113,7 +196,25 @@ class Tool(object):
                     iteration, self.iteration)
         assert self.sample == sample, "given sample, {}, does not match" \
                 " object's sample, {}".format(sample, self.sample)
-        self.logger.info("post-process {} {}".format(iteration, sample))
+        if self.start_process is not None \
+                or self.stop_process is not None \
+                or self.post_process is not None:
+            self.logger.error(
+                    "Tool(%s) has unexpected process already running", self.name)
+            return
+        #                          $pbench_bin/tool-scripts/$name --postprocess --iteration=$iteration --group=$group --dir=$dir "${tool_opts[@]}"
+        args = [
+            "{}/tool-scripts/{}".format(self.pbench_bin, self.name),
+            "--postprocess",
+            "--iteration={}".format(self.iteration),
+            "--group={}".format(self.group),
+            "--dir={}".format(self.sample_dir),
+            self.tool_opts
+            ]
+        self.logger.info(
+                "{}: post-process_tool -- {}".format(
+                    self.name, " ".join(args)))
+        self.post_process = subprocess.Popen(args)
 
 
 class Terminate(Exception):
@@ -255,8 +356,8 @@ class ToolMeister(object):
                     data = {}
         return data
 
-    def wait_for(self):
-        self.logger.debug("%s: wait_for %s", self._hostname, self.state)
+    def wait_for_command(self):
+        self.logger.debug("%s: wait_for_command %s", self._hostname, self.state)
         data = self._get_data()
         while data['state'] != self.state:
             if data['state'] == 'terminate':
@@ -285,7 +386,12 @@ class ToolMeister(object):
         iteration = data['iteration']
         sample = data['sample']
         # dir=$1 (-d|--dir)
-        dir = os.path.join(self._dir, iteration, sample)
+        sample_dir = os.path.join(self._dir, iteration, sample)
+        try:
+            pathlib.Path(sample_dir).mkdir(parents=True, exist_ok=True)
+        except Exception:
+            self.logger.exception("Could not create sample directory, %s", sample_dir)
+            return False
         # tool_group_dir="$pbench_run/tools-$group"
         # for this_tool_file in `/bin/ls $tool_group_dir`; do
         #	tool_opts=()
@@ -294,42 +400,31 @@ class ToolMeister(object):
         #		((i++))
         #	done < "$tool_group_dir/$this_tool_file"
         # name="$this_tool_file"
+        failures = 0
         for name, tool_opts in self._tools.items():
             try:
-                tool = Tool(name, self._group, iteration, sample,
-                            tool_opts, self.pbench_bin, dir, self.logger)
+                tool = Tool(name, self._group, iteration, sample, tool_opts,
+                        self.pbench_bin, sample_dir, self.logger)
                 tool.start()
             except Exception:
                 self.logger.exception(
                         "Failed to start tool %s running in background", name)
+                failures += 1
                 continue
             else:
                 self._running_tools[name] = tool
+        return failures
 
-    def stop_tools(self, data):
-        # iteration=$1 (-i|--iteration)
-        iteration = data['iteration']
-        sample = data['sample']
-        for name, tool_opts in self._tools.items():
+    def _wait_for_tools(self, iteration, sample):
+        failures = 0
+        for name in self._tools.keys():
             try:
                 tool = self._running_tools[name]
             except KeyError:
                 self.logger.error(
                         "INTERNAL ERROR - tool %s not found in list of running"
                         " tools", name)
-                continue
-            try:
-                tool.stop(iteration, sample)
-            except Exception:
-                self.logger.exception(
-                        "Failed to stop tool %s running in background", name)
-        for name, tool_opts in self._tools.items():
-            try:
-                tool = self._running_tools[name]
-            except KeyError:
-                self.logger.error(
-                        "INTERNAL ERROR - tool %s not found in list of running"
-                        " tools", name)
+                failures += 1
                 continue
             try:
                 tool.wait(iteration, sample)
@@ -337,29 +432,66 @@ class ToolMeister(object):
                 self.logger.exception(
                         "Failed to wait for tool %s to stop running in"
                         " background", name)
+                failures += 1
+        return failures
 
-    def send_tools(self, data):
+    def stop_tools(self, data):
         # iteration=$1 (-i|--iteration)
         iteration = data['iteration']
         sample = data['sample']
-        for name, tool_opts in self._tools.items():
+        failures = 0
+        for name in self._tools.keys():
             try:
                 tool = self._running_tools[name]
             except KeyError:
                 self.logger.error(
                         "INTERNAL ERROR - tool %s not found in list of running"
                         " tools", name)
+                failures += 1
+                continue
+            try:
+                tool.stop(iteration, sample)
+            except Exception:
+                self.logger.exception(
+                        "Failed to stop tool %s running in background", name)
+                failures += 1
+        failures += self._wait_for_tools(iteration, sample)
+        return failures
+
+    def send_tools(self, data):
+        # iteration=$1 (-i|--iteration)
+        iteration = data['iteration']
+        sample = data['sample']
+        failures = 0
+        for name in self._tools.keys():
+            try:
+                tool = self._running_tools[name]
+            except KeyError:
+                self.logger.error(
+                        "INTERNAL ERROR - tool %s not found in list of running"
+                        " tools", name)
+                failures += 1
                 continue
             try:
                 tool.postprocess(iteration, sample)
             except Exception:
                 self.logger.exception(
                         "Failed to post-process tool %s data", name)
-            else:
+                failures += 1
+        failures += self._wait_for_tools(iteration, sample)
+        for name in self._tools.keys():
+            try:
                 del self._running_tools[name]
+            except KeyError:
+                self.logger.error(
+                        "INTERNAL ERROR - tool %s not found in list of running"
+                        " tools", name)
+                failures += 1
+                continue
         # FIXME: implement tool data directory send to the data sink.
         self.logger.info("{}: send_tool {} {}".format(
                 self._hostname, iteration, sample))
+        return failures
 
 
 def main(argv):
@@ -448,9 +580,13 @@ def main(argv):
                 while not terminate:
                     try:
                         logger.debug("waiting ...")
-                        action, data = tm.wait_for()
+                        action, data = tm.wait_for_command()
                         logger.debug("acting ... %r, %r", action, data)
-                        action(data)
+                        failures = action(data)
+                        if failures > 0:
+                            logger.warning(
+                                    "%d failures encountered for action, '%r',"
+                                    " on data, '%r'", failures, action, data)
                     except Terminate:
                         logger.info("terminating")
                         terminate = True

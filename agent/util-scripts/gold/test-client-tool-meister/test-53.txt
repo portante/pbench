@@ -41,13 +41,15 @@ INFO pbench-tool-data-sink main -- Remove pid file ... (pbench-tool-data-sink.pi
 INFO pbench-tool-meister main -- params_key (tm-default-testhost.example.com): b'{"hostname": "testhost.example.com", "channel": "tool-meister-chan", "group": "default", "benchmark_run_dir": "/var/tmp/pbench-test-utils/pbench/mock-run", "tools": {"mpstat": ""}}'
 INFO pbench-tool-meister start -- mpstat: start_tool -- screen -dmS pbench-tool-mpstat-default-0 /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --iteration=0-iter-zero --group=default --dir=/var/tmp/tm.default.NNNNN.nnnnnnnn/0-iter-zero/sample42 ""
 INFO pbench-tool-meister stop -- mpstat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --stop --iteration=0-iter-zero --group=default --dir=/var/tmp/tm.default.NNNNN.nnnnnnnn/0-iter-zero/sample42 ""
-INFO pbench-tool-meister wait -- wait 0-iter-zero sample42
+INFO pbench-tool-meister wait -- waiting for stop 0-iter-zero sample42
 INFO pbench-tool-meister postprocess -- post-process 0-iter-zero sample42
+INFO pbench-tool-meister wait -- waiting for post-process 0-iter-zero sample42
 INFO pbench-tool-meister send_tools -- testhost.example.com: send_tool 0-iter-zero sample42
 INFO pbench-tool-meister start -- mpstat: start_tool -- screen -dmS pbench-tool-mpstat-default-1 /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --iteration=1-iter-one --group=default --dir=/var/tmp/tm.default.NNNNN.nnnnnnnn/1-iter-one/sample42 ""
 INFO pbench-tool-meister stop -- mpstat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --stop --iteration=1-iter-one --group=default --dir=/var/tmp/tm.default.NNNNN.nnnnnnnn/1-iter-one/sample42 ""
-INFO pbench-tool-meister wait -- wait 1-iter-one sample42
+INFO pbench-tool-meister wait -- waiting for stop 1-iter-one sample42
 INFO pbench-tool-meister postprocess -- post-process 1-iter-one sample42
+INFO pbench-tool-meister wait -- waiting for post-process 1-iter-one sample42
 INFO pbench-tool-meister send_tools -- testhost.example.com: send_tool 1-iter-one sample42
 INFO pbench-tool-meister main -- terminating
 INFO pbench-tool-meister main -- Remove pid file ... (pbench-tool-meister.pid)
