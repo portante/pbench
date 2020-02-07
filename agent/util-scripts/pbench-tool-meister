@@ -1,0 +1,426 @@
+#!/usr/bin/env python3
+# -*- mode: python -*-
+
+"""pbench-tool-meister
+
+Handles the life-cycle executing a given tool on a host. The tool meister
+performs the following operations:
+
+  1. Ensures the given tool exists with the supported version
+  2. Fetches the parameters for the tool
+  3. Waits for the message to start the tool
+     a. The message contains the relevant information about the
+        iteration/sample, etc.
+  4. Waits for the message to stop the tool
+  5. Waits for the message to send the tool data remotely
+  6. Repeats steps 3 - 5 until a "terminate" message is received
+
+If a SIGTERM or SIGQUIT signal is sent to the tool meister, any existing
+running tool is shutdown, all local data is removed, and the tool meister
+exits.
+
+A redis [1] instance is used as the communication mechanism between the
+various tool meisters on nodes and the benchmark driver. The redis instance is
+used both to pass iteration and sample data identifications, as well as tool
+parameters, and as a pub/sub for coordinating starts and stops of all the
+tools.
+
+The tool meister is given two arguments when started: the redis server to use,
+and the redis key to fetch its configuration from for its operation.
+
+[1] https://redis.io/
+
+$ sudo dnf install python3-redis
+$ sudo pip3 install python-daemon
+$ sudo pip3 install python-pidfile
+"""
+
+import sys
+import os
+import json
+import logging
+import tempfile
+
+import daemon
+import pidfile
+import redis
+from redis import RedisError
+
+pbench_bin = os.path.dirname(os.path.dirname(__file__))
+
+logger = logging.getLogger(__file__)
+fh = logging.FileHandler("{}.log".format(__file__))
+if os.environ.get('_PBENCH_BENCH_TESTS'):
+    fmt_str = "%(levelname)s %(name)s %(funcName)s -- %(message)s"
+else:
+    fmt_str = "%(asctime)s %(levelname)s %(process)s %(thread)s" \
+              " %(name)s %(funcName)s %(lineno)d -- %(message)s"
+fhf = logging.Formatter(fmt_str)
+fh.setFormatter(fhf)
+fh.setLevel(logging.INFO)
+logger.addHandler(fh)
+logger.setLevel(logging.INFO)
+
+
+class ToolMeisterError(Exception):
+    pass
+
+
+class Terminate(Exception):
+    pass
+
+
+class Tool(object):
+    """
+    Encapsulates all the state needed to manage a tool running as a background process.
+
+    The ToolMeister class uses one Tool object per tool running in the background. The
+
+    """
+
+    def __init__(self, name, group, iteration, sample, tool_opts, _pbench_bin, directory, _logger):
+        self.logger = _logger
+        self.name = name
+        self.group = group
+        self.iteration = iteration
+        self.sample = sample
+        # iteration_num=`echo $iteration | awk -F- '{print $1}'`
+        self.iteration_num = iteration.split('-', 1)[0]
+        self.tool_opts = tool_opts
+        self.pbench_bin = _pbench_bin
+        self.dir = directory
+        self.screen_name = f"pbench-tool-{name}-{group}-{self.iteration_num}"
+
+    def start(self):
+        """Creates the background `screen` process running the tool's "start"
+        operation.
+        """
+        # screen -dmS $screen_name $pbench_bin/tool-scripts/$name --start --iteration=$iteration --group=$group
+        # --dir=$dir "${tool_opts[@]}"
+        self.logger.info(f"{self.name}: start_tool -- screen -dmS {self.screen_name}"
+                         f" {self.pbench_bin}/tool-scripts/{self.name} --start"
+                         f" --iteration={self.iteration} --group={self.group} --dir={self.dir} '{self.tool_opts}'")
+
+    def stop(self, iteration, sample):
+        """Creates the background `screen` process to running the tool's "stop"
+        operation.
+        """
+        assert self.iteration == iteration, f"given iteration, {iteration}, does not" \
+                                            f" match object's iteration, {self.iteration}"
+        assert self.sample == sample, f"given sample, {sample}, does not match" \
+                                      f" object's sample, {self.sample}"
+        # $pbench_bin/tool-scripts/$name --stop  --iteration=$iteration --group=$group --dir=$dir "${tool_opts[@]}"
+        self.logger.info(f"{self.name}: stop_tool -- {self.pbench_bin}/tool-scripts/{self.name} --stop"
+                         f" --iteration={self.iteration} --group={self.group} --dir={self.dir} '{self.tool_opts}'")
+
+    def wait(self, iteration, sample):
+        """Waits for the tool's "stop" process to complete, then waits for the tool's
+        start process to exit before return.
+        """
+        assert self.iteration == iteration, f"given iteration, {iteration}, does not" \
+                                            f" match object's iteration, {self.iteration}"
+
+        assert self.sample == sample, f"given sample, {sample}, does not match" \
+                                      f" object's sample, {self.sample}"
+
+        self.logger.info(f"wait {iteration} {sample}")
+
+    def postprocess(self, iteration, sample):
+        """Run the tool's "post-process" action.
+        """
+        assert self.iteration == iteration, f"given iteration, {iteration}, does not" \
+                                            f" match object's iteration, {self.iteration}"
+        assert self.sample == sample, f"given sample, {sample}, does not match" \
+                                      f" object's sample, {self.sample}"
+        self.logger.info("post-process {} {}".format(iteration, sample))
+
+
+class ToolMeister(object):
+    """Encapsulate tool life-cycle
+
+    The goal of this class is to make sure all necessary state and behaviors
+    for managing a given tool are handled by the methods offered by the
+    class.
+
+    The start_, stop_, send_, and wait_ prefixed methods represent all the
+    necessary iterfaces for managing the life-cycle of a tool.  The cleanup()
+    method is provided to abstract away any necessary clean up required by a
+    tool so that the main() driver does not need to know any details about a
+    tool.
+
+    The format of the JSON data for the parameters is as follows:
+
+        {
+            "hostname": "<hostname of tool meister, should be same as"
+                        " 'hostname -f' where tool meister is running>",
+            "channel":  "<Redis server channel name to subscribe to for"
+                        " start/stop/send messages from controller>",
+            "group":    "<Name of the tool group from which the following"
+                        " tools data was pulled, passed as the"
+                        " --group argument to the individual tools>",
+            "benchmark_run_dir":  "<Top-level directory of the current"
+                        " benchmark run>",
+            "tools": {
+                "tool-0": [ "--opt-0", "--opt-1", ..., "--opt-N" ],
+                "tool-1": [ "--opt-0", "--opt-1", ..., "--opt-N" ],
+                ...,
+                "tool-N": [ "--opt-0", "--opt-1", ..., "--opt-N" ]
+            }
+        }
+    """
+
+    def __init__(self, _pbench_bin, params, redis_server, _logger):
+        self.logger = _logger
+        self.pbench_bin = _pbench_bin
+        ret_val = self.fetch_params(params)
+        self._hostname, self._channel, self._group, self._benchmark_run_dir, self._tools = ret_val
+        self._running_tools = dict()
+        self._rs = redis_server
+        self._pubsub = self._rs.pubsub()
+        self._pubsub.subscribe(self._channel)
+        self._chan = self._pubsub.listen()
+        # Name of the tool data directory to use when invoking tools, passed
+        # as the --dir argument to the individual tools; this is a local
+        # temporary directory.
+        self._dir = tempfile.mkdtemp(dir="/var/tmp", prefix=f"tm.{self._group}.{os.getpid()}.")
+
+        # Now that we have subscribed the channel as specified in the params
+        # object, we need to pull off the first message, which is an
+        # acknowledgement that we have properly subscribed.
+        resp = next(self._chan)
+
+        assert resp['type'] == 'subscribe', f"Unexpected 'type': {resp}"
+        assert resp['pattern'] is None, f"Unexpected 'pattern': {resp}"
+        assert resp['channel'].decode('utf-8') == self._channel, f"Unexpected 'channel': {resp}"
+        assert resp['data'] == 1, f"Unexpected 'data': {resp}"
+
+        # First state we are expecting
+        self.state = 'start'
+        self._state_trans = {
+            'start': {'next': 'stop', 'action': self.start_tools},
+            'stop': {'next': 'send', 'action': self.stop_tools},
+            'send': {'next': 'start', 'action': self.send_tools}
+        }
+        # Tell the entity that started us who we are, indicating we're ready.
+        started_msg = dict(
+            kind="tm",
+            hostname=self._hostname,
+            pid=os.getpid()
+        )
+        self._rs.publish(f"{self._channel}-start", json.dumps(started_msg))
+
+    @staticmethod
+    def fetch_params(params):
+        """Static help method that allows the method constructing a ToolMeister
+        instance to verify the parameters before we actually construct the
+        object.
+
+        The definition of the contents of a parameter block is really
+        independent of a ToolMeister implementation, but we keep this method
+        in the ToolMeister class since it is closely related to the
+        implementation.
+        """
+        try:
+            hostname = params['hostname']
+            channel = params['channel']
+            group = params['group']
+            benchmark_run_dir = params['benchmark_run_dir']
+            tools = params['tools']
+        except KeyError:
+            raise ToolMeisterError("Invalid parameter block")
+        else:
+            return hostname, channel, group, benchmark_run_dir, tools
+
+    def cleanup(self):
+        self.logger.debug("%s: cleanup", self._hostname)
+        self._pubsub.unsubscribe()
+        self._pubsub.close()
+        # FIXME: rm -rf self._dir
+
+    def _get_data(self):
+        payload = next(self._chan)
+        data = {}
+        while not data:
+            json_str = payload['data'].decode('utf-8')
+            try:
+                data = json.loads(json_str)
+            except json.JSONDecodeError:
+                self.logger.warning(f"data payload in message not JSON, '{json_str}'")
+                payload = next(self._chan)
+                data = {}
+            else:
+                if 'state' not in data or 'iteration' not in data or 'sample' not in data:
+                    self.logger.warning(f"unrecognized data payload in message, '{json_str}'")
+                    payload = next(self._chan)
+                    data = {}
+        return data
+
+    def wait_for(self):
+        self.logger.debug("%s: wait_for %s", self._hostname, self.state)
+        data = self._get_data()
+        while data['state'] != self.state:
+            if data['state'] == 'terminate':
+                raise Terminate()
+            self.logger.info("ignoring unexpected data, %r", data)
+            data = self._get_data()
+        state_rec = self._state_trans[self.state]
+        action = state_rec['action']
+        self.state = state_rec['next']
+        self.logger.debug("%s: msg - %r", self._hostname, data)
+        return action, data
+
+    def start_tools(self, data):
+        if self._running_tools:
+            self.logger.error("INTERNAL ERROR - encountered previously running tools")
+            return False
+
+        iteration = data['iteration']
+        sample = data['sample']
+        directory = os.path.join(self._dir, iteration, sample)
+        for name, tool_opts in self._tools.items():
+            try:
+                tool = Tool(name, self._group, iteration, sample, tool_opts, self.pbench_bin, directory, self.logger)
+                tool.start()
+            except Exception:
+                self.logger.exception(f"Failed to start tool {name} running in background")
+                continue
+            else:
+                self._running_tools[name] = tool
+
+    def stop_tools(self, data):
+        iteration = data['iteration']
+        sample = data['sample']
+        for name, tool_opts in self._tools.items():
+            try:
+                tool = self._running_tools[name]
+            except KeyError:
+                self.logger.error(
+                    "INTERNAL ERROR - tool %s not found in list of running"
+                    " tools", name)
+                continue
+            try:
+                tool.stop(iteration, sample)
+            except Exception:
+                self.logger.exception(
+                    "Failed to stop tool %s running in background", name)
+        for name, tool_opts in self._tools.items():
+            try:
+                tool = self._running_tools[name]
+            except KeyError:
+                self.logger.error(f"INTERNAL ERROR - tool {name} not found in list of running tools")
+                continue
+            try:
+                tool.wait(iteration, sample)
+            except Exception:
+                self.logger.exception(f"Failed to wait for tool {name} to stop running in background")
+
+    def send_tools(self, data):
+        iteration = data['iteration']
+        sample = data['sample']
+        for name, tool_opts in self._tools.items():
+            try:
+                tool = self._running_tools[name]
+            except KeyError:
+                self.logger.error("INTERNAL ERROR - tool {name} not found in list of running tools")
+                continue
+            try:
+                tool.postprocess(iteration, sample)
+            except Exception:
+                self.logger.exception(
+                    "Failed to post-process tool %s data", name)
+            else:
+                del self._running_tools[name]
+        # FIXME: implement tool data directory send to the data sink.
+        self.logger.info(f"{self._hostname}: send_tool {iteration} {sample}")
+
+
+def main(argv):
+    """Main program for the tool meister.
+
+    This function is the simple driver for the tool meister behaviors,
+    handling setup of signals, Redis() client construction, loading and
+    validating parameters.
+    """
+
+    try:
+        redis_host = argv[1]
+        redis_port = argv[2]
+        param_key = argv[3]
+    except IndexError as e:
+        logger.error("Invalid arguments: %s", e)
+        return 1
+
+    try:
+        redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
+    except Exception as e:
+        logger.error("Unable to connect to redis server, %s:%s: %s",
+                     redis_host, redis_port, e)
+        return 2
+
+    try:
+        params_raw = redis_server.get(param_key)
+        if params_raw is None:
+            logger.error("Parameter key, \"%s\" does not exist.",
+                         param_key)
+            return 3
+        logger.info("params_key (%s): %r", param_key, params_raw)
+        params_str = params_raw.decode('utf-8')
+        params = json.loads(params_str)
+        # Validate the tool meister parameters without constructing an object
+        # just yet.
+        ToolMeister.fetch_params(params)
+    except Exception:
+        logger.exception("Unable to fetch and decode parameter key, {}",
+                         param_key)
+        return 4
+
+    pidfile_name = "{}.pid".format(__file__)
+    pfctx = pidfile.PidFile(pidfile_name)
+    with daemon.DaemonContext(
+            stdout=sys.stdout, stderr=sys.stderr,
+            working_directory=os.getcwd(),
+            umask=0o022,
+            pidfile=pfctx,
+            files_preserve=[sys.stdout, sys.stderr, fh.stream.fileno()]):
+        try:
+            # We have to re-create the ToolMeister object now that we are
+            # "daemonized".
+            try:
+                redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
+            except RedisError:
+                logger.exception(f"Unable to connect to redis server, {redis_host}:{redis_port}: ")
+                return 2
+            try:
+                tm = ToolMeister(pbench_bin, params, redis_server, logger)
+            except Exception:
+                logger.exception(f"Unable to re-construct the ToolMeister object with params, '{params}'")
+                return 4
+
+            terminate = False
+            try:
+                while not terminate:
+                    try:
+                        logger.debug("waiting ...")
+                        action, data = tm.wait_for()
+                        logger.debug(f"acting ... {action}, {data}")
+                        action(data)
+                    except Terminate:
+                        logger.info("terminating")
+                        terminate = True
+            except Exception:
+                logger.exception("Unexpected error encountered")
+            finally:
+                tm.cleanup()
+        finally:
+            logger.info("Remove pid file ... (%s)", pidfile_name)
+            try:
+                os.unlink(pidfile_name)
+            except Exception:
+                logger.exception(f"Failed to remove pid file {pidfile_name}")
+
+    return 0
+
+
+if __name__ == '__main__':
+    status = main(sys.argv)
+    sys.exit(status)
