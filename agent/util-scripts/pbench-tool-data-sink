@@ -19,8 +19,8 @@ import daemon
 import pidfile
 import redis
 from threading import Thread
-from bottle import Bottle, ServerAdapter, route, run, request, abort
-
+from bottle import ServerAdapter, route, run, request, abort
+from config import conf
 
 _BUFFER_SIZE = 65536
 
@@ -28,39 +28,40 @@ benchmark_run_dir = None
 logger = None
 state = None
 
+
 @route('/tool-data/<iteration_name>/<hostname>', method='PUT')
 def put_document(iteration_name, hostname):
     global benchmark_run_dir
     global logger
 
+    remaining_bytes = 0
+    exp_md5 = None
+
     try:
         content_length = int(request['CONTENT_LENGTH'])
     except ValueError:
         abort(400, "Invalid content-length header, not an integer")
-    except Exception:
+    except KeyError:
         abort(400, "Missing required content-length header")
     else:
         if content_length > (2 ** 30):
-            abort(400, "Content object too large, keep it at 1 GB ({:d}) and"
-                    " under".format(content_length))
+            abort(400, f"Content object too large, keep it at 1 GB"
+                    " ({content_length:d}) and under")
         remaining_bytes = content_length
 
     try:
         exp_md5 = request['HTTP_MD5SUM']
-    except Exception:
+    except KeyError:
         logger.exception(request.keys())
         abort(400, "Missing required md5sum header")
 
     target_dir = os.path.join(benchmark_run_dir, iteration_name)
     if not os.path.isdir(target_dir):
-        abort(400, "Invalid URL, path {} does not exist".format(
-                iteration_name))
-    host_tool_data_tb_name = os.path.join(target_dir, "{}.tar.xz".format(
-            hostname))
+        abort(400, f"Invalid URL, path {iteration_name} does not exist")
+    host_tool_data_tb_name = os.path.join(target_dir, f"{hostname}.tar.xz")
     if os.path.exists(host_tool_data_tb_name):
-        abort(409, "{}/{}.tar.xz already uploaded".format(iteration_name,
-                hostname))
-    host_tool_data_tb_md5 = "{}.md5".format(host_tool_data_tb_name)
+        abort(409, f"{iteration_name}/{hostname}.tar.xz already uploaded")
+    host_tool_data_tb_md5 = f"{host_tool_data_tb_name}.md5"
 
     with tempfile.NamedTemporaryFile(mode="wb", dir=target_dir) as ofp:
         total_bytes = 0
@@ -76,16 +77,16 @@ def put_document(iteration_name, hostname):
             ofp.write(buf)
         cur_md5 = h.hexdigest()
         if cur_md5 != exp_md5:
-            abort(400, "Content, {}, does not match its MD5SUM header,"
-                    " {}".format(cur_md5, exp_md5))
+            abort(400, f"Content, {cur_md5}, does not match its MD5SUM header,"
+                    " {exp_md5}")
         if total_bytes <= 0:
             abort(400, 'No data received')
 
         # First write the .md5
         try:
             with open(host_tool_data_tb_md5, "w") as md5fp:
-                md5fp.write("{} {}\n".format(exp_md5, os.path.basename(
-                        host_tool_data_tb_name)))
+                _fname = os.path.basename(host_tool_data_tb_name)
+                md5fp.write(f"{exp_md5} {_fname}\n")
         except Exception:
             try:
                 os.remove(host_tool_data_tb_md5)
@@ -113,6 +114,7 @@ class DataSinkWSGIRefServer(ServerAdapter):
         if self.quiet:
             class QuietHandler(WSGIRequestHandler):
                 def log_request(*args, **kw): pass
+
             self.options['handler_class'] = QuietHandler
         self.server = make_server(self.host, self.port, handler, **self.options)
         self.server.serve_forever()
@@ -137,28 +139,29 @@ def watcher(redis_server, channel, server):
         # Pull off first message which is an acknowledgement we have
         # successfully subscribed.
         resp = next(chan)
-        assert resp['type'] == 'subscribe', "bad type: {!r}".format(resp)
-        assert resp['pattern'] is None, "bad pattern: {!r}".format(resp)
+        assert resp['type'] == 'subscribe', f"bad type: {resp!r}"
+        assert resp['pattern'] is None, f"bad pattern: {resp!r}"
         assert resp['channel'].decode('utf-8') == channel, \
-                "bad channel: {!r}".format(resp)
-        assert resp['data'] == 1, "bad data: {!r}".format(resp)
+                f"bad channel: {resp!r}"
+        assert resp['data'] == 1, f"bad data: {resp!r}"
 
         # Tell the entity that started us who we are indicating we're ready.
         started_msg = dict(
                 kind = "ds",
                 hostname = "localhost",
                 pid = os.getpid())
-        redis_server.publish("{}-start".format(channel),
-                json.dumps(started_msg))
+        redis_server.publish(f"{channel}-start", json.dumps(started_msg))
 
         # We start out expecting the next state to be "start"
         state = "start"
         for payload in chan:
             try:
                 json_str = payload['data'].decode('utf-8')
-            except Exception:
-                logger.warning("data payload in message not UTF-8, '%r'",
-                        json_str)
+            except KeyError:
+                logger.error("data payload missing in message")
+                continue
+            except UnicodeDecodeError:
+                logger.warning("data payload in message not UTF-8")
                 continue
             logger.debug("watcher: channel payload, \"%r\"", json_str)
             try:
@@ -177,6 +180,7 @@ def watcher(redis_server, channel, server):
                     if l_state == 'terminate':
                         # FIXME: stop bottle server
                         logger.info("Terminating bottle server ...")
+                        server.stop()
                         return
                     else:
                         # FIXME: for now, we just take whatever state we
@@ -196,10 +200,12 @@ def main(argv):
     global PROG
     PROG = os.path.basename(argv[0])
 
+    config = conf["tool-meister"]
+
     global logger
     logger = logging.getLogger(PROG)
-    fh = logging.FileHandler("{}.log".format(PROG))
-    if os.environ.get('_PBENCH_BENCH_TESTS'):
+    fh = logging.FileHandler(f"{PROG}.log")
+    if os.environ.get('_PBENCH_UNIT_TESTS'):
         fmtstr = "%(levelname)s %(name)s %(funcName)s -- %(message)s"
     else:
         fmtstr = "%(asctime)s %(levelname)s %(process)s %(thread)s" \
@@ -211,6 +217,7 @@ def main(argv):
     logger.setLevel(logging.INFO)
 
     global benchmark_run_dir
+
     try:
         redis_host = argv[1]
         redis_port = argv[2]
@@ -221,7 +228,7 @@ def main(argv):
 
     try:
         redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
-    except Exception as e:
+    except redis.RedisError as e:
         logger.error("Unable to connect to redis server, %s:%s: %s",
                 redis_host, redis_port, e)
         return 2
@@ -254,12 +261,13 @@ def main(argv):
                     " directory.", benchmark_run_dir)
             return 5
 
-    pidfile_name = "{}.pid".format(PROG)
+    pidfile_name = "f{PROG}.pid"
     pfctx = pidfile.PIDFile(pidfile_name)
-    with open("{}.out".format(PROG), "w") as sofp, \
-         open("{}.err".format(PROG), "w") as sefp:
+    with open(f"{PROG}.out", "w") as sofp, \
+         open(f"{PROG}.err", "w") as sefp:
         with daemon.DaemonContext(
-                stdout=sofp, stderr=sefp,
+                stdout=sofp,
+                stderr=sefp,
                 working_directory=os.getcwd(),
                 umask=0o022,
                 pidfile=pfctx,
@@ -270,7 +278,7 @@ def main(argv):
                 try:
                     redis_server = redis.Redis(
                             host=redis_host, port=redis_port, db=0)
-                except Exception as e:
+                except redis.RedisError as e:
                     logger.error("Unable to connect to redis server, %s:%s: %s",
                             redis_host, redis_port, e)
                     return 2
@@ -283,14 +291,14 @@ def main(argv):
                 watcher_thread.start()
 
                 logger.info("Running...")
-                Bottle().run(server=server)
+                run(server=server)
 
                 watcher_thread.join()
             finally:
                 logger.info("Remove pid file ... (%s)", pidfile_name)
                 try:
                     os.unlink(pidfile_name)
-                except Exception:
+                except OSError:
                     logger.exception("Failed to remove pid file %s", pidfile_name)
 
     return 0

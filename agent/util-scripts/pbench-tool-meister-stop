@@ -15,6 +15,7 @@ import errno
 import logging
 import redis
 import signal
+import podman
 
 # port number is "One Tool" in hex 0x17001
 # FIXME: move to common area
@@ -127,22 +128,12 @@ def main(argv):
 
     if ret_val == 0:
         # All was good so far, so we can terminate the redis server.
+        podman_socket = f"unix:/run/user/{os.getuid()}/podman/io.podman"
         try:
-            benchmark_run_dir = os.environ['benchmark_run_dir']
-            redis_server_pid_file = os.path.join(
-                    benchmark_run_dir, "tm", "redis_{:d}.pid".format(
-                        redis_port))
-            with open(redis_server_pid_file, "r") as fp:
-                pid_str = fp.read()
-            redis_server_pid = int(pid_str)
-            pid_exists = True
-            while pid_exists:
-                try:
-                    os.kill(redis_server_pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pid_exists = False
-                else:
-                    time.sleep(0.1)
+            with podman.Client(podman_socket) as client:
+                for container in client.containers.list():
+                    if container.get("names") == "tm-redis":
+                        container.stop()
         except Exception:
             logger.exception("Exception encountered terminating Redis server")
             ret_val = 1

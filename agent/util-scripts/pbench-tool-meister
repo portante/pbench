@@ -73,6 +73,24 @@ class Tool(object):
         self.stop_process = None
         self.post_process = None
 
+    def _screen_args(self, action):
+        args = self._args(, action)
+        return [
+            "/usr/bin/screen",
+            "-dmS",
+            self.screen_name
+            ] + args
+
+    def _args(self, action):
+        return [
+            f"{self.pbench_bin}/tool-scripts/{self.name}",
+            action,
+            f"--iteration={self.iteration}",
+            f"--group={self.group}",
+            f"--dir={self.sample_dir}",
+            self.tool_opts
+            ]
+
     def start(self):
         """Creates the background `screen` process running the tool's "start"
         operation.
@@ -85,30 +103,18 @@ class Tool(object):
                     self.name)
             return
         # screen -dmS $screen_name $pbench_bin/tool-scripts/$name --start --iteration=$iteration --group=$group --dir=$dir "${tool_opts[@]}"
-        args = [
-            "/usr/bin/screen",
-            "-dmS",
-            self.screen_name,
-            "{}/tool-scripts/{}".format(self.pbench_bin, self.name),
-            "--start",
-            "--iteration={}".format(self.iteration),
-            "--group={}".format(self.group),
-            "--dir={}".format(self.sample_dir),
-            self.tool_opts
-            ]
-        self.logger.info(
-                "{}: start_tool -- {}".format(self.name, " ".join(args)))
+        self._screen_args("--start")
+        self.logger.info("%s: start_tool -- %s", self.name, " ".join(args))
         self.start_process = subprocess.Popen(args)
 
     def stop(self, iteration, sample):
         """Creates the background `screen` process to running the tool's "stop"
         operation.
         """
-        assert self.iteration == iteration, "given iteration, {}, does not" \
-                " match object's iteration, {}".format(
-                    iteration, self.iteration)
-        assert self.sample == sample, "given sample, {}, does not match" \
-                " object's sample, {}".format(sample, self.sample)
+        assert self.iteration == iteration, f"given iteration, {iteration}," \
+                " does not match object's iteration, {self.iteration}"
+        assert self.sample == sample, f"given sample, {sample}, does not" \
+                " match object's sample, {self.sample}"
         if self.start_process is None:
             self.logger.error(
                     "Tool(%s)'s start process not already running", self.name)
@@ -124,16 +130,9 @@ class Tool(object):
                     " running", self.name)
             return
         #                          $pbench_bin/tool-scripts/$name --stop  --iteration=$iteration --group=$group --dir=$dir "${tool_opts[@]}"
-        args = [
-            "{}/tool-scripts/{}".format(self.pbench_bin, self.name),
-            "--stop",
-            "--iteration={}".format(self.iteration),
-            "--group={}".format(self.group),
-            "--dir={}".format(self.sample_dir),
-            self.tool_opts
-            ]
+        args = self._args("--stop")
         self.logger.info(
-                "{}: stop_tool -- {}".format(self.name, " ".join(args)))
+                "%s: stop_tool -- %s", self.name, " ".join(args))
         self.stop_process = subprocess.Popen(args)
 
     def wait(self, iteration, sample):
@@ -144,11 +143,10 @@ class Tool(object):
         post-processing process running, wait for that to complete before
         returning.
         """
-        assert self.iteration == iteration, "given iteration, {}, does not" \
-                " match object's iteration, {}".format(
-                    iteration, self.iteration)
-        assert self.sample == sample, "given sample, {}, does not match" \
-                " object's sample, {}".format(sample, self.sample)
+        assert self.iteration == iteration, f"given iteration, {iteration},"
+                " does not match object's iteration, {self.iteration}"
+        assert self.sample == sample, f"given sample, {sample}, does not"
+                " match object's sample, {self.sample}"
         if self.stop_process is not None:
             if self.start_process is None:
                 self.logger.error(
@@ -160,8 +158,7 @@ class Tool(object):
                         "Tool(%s) has unexpected post-process process running",
                         self.name)
                 return
-            self.logger.info(
-                    "waiting for stop {} {}".format(iteration, sample))
+            self.logger.info("waiting for stop %s %s", iteration, sample)
             # We wait for the stop process to finish first ...
             self.stop_process.wait()
             self.stop_process = None
@@ -179,7 +176,7 @@ class Tool(object):
                         "Tool(%s) has unexpected stop process running",
                         self.name)
                 return
-            self.logger.info("waiting for post-process {} {}".format(
+            self.logger.info("waiting for post-process %s %s",
                     iteration, sample))
             self.post_process.wait()
             self.post_process = None
@@ -191,11 +188,10 @@ class Tool(object):
     def postprocess(self, iteration, sample):
         """Run the tool's "post-process" action.
         """
-        assert self.iteration == iteration, "given iteration, {}, does not" \
-                " match object's iteration, {}".format(
-                    iteration, self.iteration)
-        assert self.sample == sample, "given sample, {}, does not match" \
-                " object's sample, {}".format(sample, self.sample)
+        assert self.iteration == iteration, f"given iteration, {iteration},"
+                " does not match object's iteration, {self.iteration}"
+        assert self.sample == sample, f"given sample, {sample}, does not"
+                " match object's sample, {self.sample}"
         if self.start_process is not None \
                 or self.stop_process is not None \
                 or self.post_process is not None:
@@ -203,17 +199,9 @@ class Tool(object):
                     "Tool(%s) has unexpected process already running", self.name)
             return
         #                          $pbench_bin/tool-scripts/$name --postprocess --iteration=$iteration --group=$group --dir=$dir "${tool_opts[@]}"
-        args = [
-            "{}/tool-scripts/{}".format(self.pbench_bin, self.name),
-            "--postprocess",
-            "--iteration={}".format(self.iteration),
-            "--group={}".format(self.group),
-            "--dir={}".format(self.sample_dir),
-            self.tool_opts
-            ]
-        self.logger.info(
-                "{}: post-process_tool -- {}".format(
-                    self.name, " ".join(args)))
+        self._args("--postprocess")
+        self.logger.info("%s: post-process_tool -- %s",
+                self.name, " ".join(args)))
         self.post_process = subprocess.Popen(args)
 
 
@@ -306,13 +294,11 @@ class ToolMeister(object):
         # object, we need to pull off the first message, which is an
         # acknowledgement that we have properly subscribed.
         resp = next(self._chan)
-        assert resp['type'] == 'subscribe', "Unexpected 'type': {!r}".format(
-                resp)
-        assert resp['pattern'] is None, "Unexpected 'pattern': {!r}".format(
-                resp)
-        assert resp['channel'].decode('utf-8') == self._channel, "Unexpected" \
-                " 'channel': {!r}".format(resp)
-        assert resp['data'] == 1, "Unexpected 'data': {!r}".format(resp)
+        assert resp['type'] == 'subscribe', f"Unexpected 'type': {resp!r}"
+        assert resp['pattern'] is None, f"Unexpected 'pattern': {resp!r}"
+        assert resp['channel'].decode('utf-8') == self._channel, \
+                f"Unexpected 'channel': {resp!r}"
+        assert resp['data'] == 1, f"Unexpected 'data': {resp!r}"
         # First state we are expecting
         self.state = 'start'
         self._state_trans = {
@@ -325,8 +311,7 @@ class ToolMeister(object):
                 kind = "tm",
                 hostname = self._hostname,
                 pid = os.getpid())
-        self._rs.publish("{}-start".format(self._channel),
-                json.dumps(started_msg))
+        self._rs.publish(f"{self._channel}-start", json.dumps(started_msg))
 
     def cleanup(self):
         self.logger.debug("%s: cleanup", self._hostname)
@@ -341,7 +326,7 @@ class ToolMeister(object):
             json_str = payload['data'].decode('utf-8')
             try:
                 data = json.loads(json_str)
-            except Exception:
+            except json.JSONDecodeError:
                 self.logger.warning(
                         "data payload in message not JSON, '%s'", json_str)
                 payload = next(self._chan)
@@ -476,6 +461,7 @@ class ToolMeister(object):
                 tool.postprocess(iteration, sample)
             except Exception:
                 self.logger.exception(
+
                         "Failed to post-process tool %s data", name)
                 failures += 1
         failures += self._wait_for_tools(iteration, sample)
@@ -489,7 +475,7 @@ class ToolMeister(object):
                 failures += 1
                 continue
         # FIXME: implement tool data directory send to the data sink.
-        self.logger.info("{}: send_tool {} {}".format(
+        self.logger.info("%s: send_tool %s %s",
                 self._hostname, iteration, sample))
         return failures
 
@@ -505,8 +491,8 @@ def main(argv):
     pbench_bin = os.path.dirname(os.path.dirname(argv[0]))
 
     logger = logging.getLogger(PROG)
-    fh = logging.FileHandler("{}.log".format(PROG))
-    if os.environ.get('_PBENCH_BENCH_TESTS'):
+    fh = logging.FileHandler(f"{PROG}.log")
+    if os.environ.get('_PBENCH_UNIT_TESTS'):
         fmtstr = "%(levelname)s %(name)s %(funcName)s -- %(message)s"
     else:
         fmtstr = "%(asctime)s %(levelname)s %(process)s %(thread)s" \
@@ -549,7 +535,7 @@ def main(argv):
                 param_key)
         return 4
 
-    pidfile_name = "{}.pid".format(PROG)
+    pidfile_name = f"{PROG}.pid"
     pfctx = pidfile.PIDFile(pidfile_name)
     with daemon.DaemonContext(
             stdout=sys.stdout, stderr=sys.stderr,
@@ -563,7 +549,7 @@ def main(argv):
             try:
                 redis_server = redis.Redis(
                         host=redis_host, port=redis_port, db=0)
-            except Exception as e:
+            except redis.RedisError as e:
                 logger.error("Unable to connect to redis server, %s:%s: %s",
                         redis_host, redis_port, e)
                 return 2
@@ -599,6 +585,7 @@ def main(argv):
             try:
                 os.unlink(pidfile_name)
             except Exception:
+
                 logger.exception("Failed to remove pid file %s", pidfile_name)
 
     return 0

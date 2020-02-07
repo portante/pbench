@@ -4,7 +4,7 @@
 """pbench-tool-meister-client
 
 Responsible for publishing the requested tool meister operation.  The
-operation can be one of "start", "stop", or "send".
+operation can be one of "start", "stop", "send", "postprocess" or "kill".
 """
 
 import sys
@@ -59,9 +59,8 @@ def main(argv):
     else:
         if operation not in operations:
             raise Exception(
-                    "Unrecognized operation, '{}', valid operations are:"
-                    " {}".format(
-                            operation, operations))
+                    "Unrecognized operation, '{operation}', valid operations"
+                    " are: '{operations}'")
         elif operation == 'postprocess':
             # We map the legacy "postprocess" action to the new "send" action.
             operation = 'send'
@@ -82,7 +81,7 @@ def main(argv):
             group=group)
     try:
         ret = redis_server.publish(channel, json.dumps(msg))
-    except Exception:
+    except redis.RedisError:
         logger.exception("Failed to publish client message")
     else:
         logger.debug("publish() = %r", ret)
