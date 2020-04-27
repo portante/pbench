@@ -102,12 +102,17 @@ function log_finish {
 }
 
 function log_exit {
-    echo "${PROG}: ${1}" >&4
+    local _msg="${PROG}: ${1}"
+    if [[ -z "${3}" ]]; then
+	printf -- "%s\n" "${_msg}" >&4
+    else
+	printf -- "%s\n" "${_msg}" | tee -a "${3}" >&4
+    fi
     log_finish
     if [[ -z "${2}" ]]; then
-        exit 1
+	exit 1
     else
-        exit ${2}
+	exit ${2}
     fi
 }
 
