@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/bash
 # -*- mode: shell-script; indent-tabs-mode: t; sh-basic-offset: 8; sh-indentation: 8; tab-width: 8 -*-
 
 # NOTE: this script is used for many different tool names.  All are links to

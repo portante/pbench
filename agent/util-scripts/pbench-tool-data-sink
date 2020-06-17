@@ -13,6 +13,10 @@
 
 import sys
 import os
+import socket
+import subprocess
+import shutil
+import tarfile
 import json
 import hashlib
 import tempfile
@@ -27,7 +31,7 @@ from threading import Thread, Lock, Condition
 from http import HTTPStatus
 from wsgiref.simple_server import WSGIRequestHandler, make_server
 from bottle import Bottle, ServerAdapter, request, abort
-
+from datetime import datetime
 
 _BUFFER_SIZE = 65536
 
@@ -519,6 +523,44 @@ class ToolDataSink(Bottle):
             self._cv.notify()
 
 
+def prometheus_launch():
+    config = open("prometheus.yml", 'w')
+
+    config.write("global:\n  scrape_interval: 1s\n  evaluation_interval: 1s\n\n")
+    #config.write("alerting:\n  alertmanagers:\n  - static_configs:\n    - targets:\n\nrule_files:\n\n")
+    config.write("scrape_configs:\n  - job_name: \'prometheus\'\n    static_configs:\n    - targets: [\'localhost:9090\']\n\n")
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    ip_address = s.getsockname()[0]
+    s.close()
+
+    for i in range(1):
+        config.write("  - job_name: \'local_node\'\n    static_configs:\n    - targets: [\'{}:9100\']\n\n".format(str(ip_address)))
+
+    config.close()
+
+    image = open("Dockerfile", 'w')
+    image.write("FROM prom/prometheus\nADD prometheus.yml /etc/prometheus/")
+    image.close()
+
+    args = ['podman', 'pull', 'prom/prometheus']
+    prom_pull = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    prom_pull.wait()
+
+    args = ['podman', 'build', '-t', 'custom-prom', '-f', './Dockerfile']
+    build = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
+    build.wait()
+
+    now = datetime.now()
+    volume = "prom_data_" + now.strftime("%d-%m-%Y_%Hh%Mm%Ss")
+
+    args = ['podman', 'run', '-p', '9090:9090', '-v', '{}:/prometheus'.format(volume), 'custom-prom']
+    run = subprocess.Popen(args, stdout =subprocess.DEVNULL, stderr=subprocess.STDOUT)
+
+    return (run, volume)
+
+
 def main(argv):
     PROG = Path(argv[0]).name
 
@@ -575,6 +617,8 @@ def main(argv):
         params = json.loads(params_str)
         channel = params["channel"]
         benchmark_run_dir = Path(params["benchmark_run_dir"]).resolve()
+        tool_group = params["group"]
+        #logger.info("TOOL GROUP: " + str(tool_group))
     except Exception as ex:
         logger.error("Unable to fetch and decode parameter key, %s: %s", param_key, ex)
         return 4
@@ -585,6 +629,9 @@ def main(argv):
                 benchmark_run_dir,
             )
             return 5
+
+    #run = None
+    run,volume = prometheus_launch()
 
     pidfile_name = f"{PROG}.pid"
     pfctx = pidfile.PIDFile(pidfile_name)
@@ -602,6 +649,9 @@ def main(argv):
                 # are "daemonized".
                 try:
                     redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
+                    logger.info("Before get")
+                    redis_server.get(param_key)
+                    logger.info("...and after")
                 except Exception as e:
                     logger.error(
                         "Unable to connect to redis server, %s:%s: %s",
@@ -628,6 +678,23 @@ def main(argv):
                     os.unlink(pidfile_name)
                 except Exception:
                     logger.exception("Failed to remove pid file %s", pidfile_name)
+
+    run.terminate()
+    run.wait()
+
+    logger.info("BENCHMARK RUN DIR: " + str(benchmark_run_dir))
+
+    data_tar = tarfile.open(str(benchmark_run_dir) + "/prometheus_data.tar.gz", "w:gz")
+    source = "/var/lib/containers/storage/volumes/{}".format(volume)
+    data_tar.add(source, arcname=os.path.basename(source))
+    data_tar.close()
+
+    #shutil.copytree("/var/lib/containers/storage/volumes/{}/".format(volume), os.getcwd() + "/{}".format(volume))
+
+    shutil.rmtree("/var/lib/containers/storage/volumes/{}".format(volume))
+
+    #os.remove("prometheus.yml")
+    #os.remove("Dockerfile")
 
     return 0
 

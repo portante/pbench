@@ -1,0 +1,75 @@
+#!/usr/bin/python3
+# -*- mode: python -*-
+
+import sys
+import os
+import psutil
+import shutil
+import subprocess
+import logging
+import time
+
+PROG = os.path.basename(sys.argv[0])
+logger = logging.getLogger(PROG)
+logger.setLevel(logging.DEBUG)
+sh = logging.StreamHandler()
+sh.setLevel(logging.DEBUG)
+shf = logging.Formatter("%(message)s")
+sh.setFormatter(shf)
+logger.addHandler(sh)
+
+node_exp = None
+install_path = None
+
+if len(sys.argv) != 4 and sys.argv[1] != "--help":
+    logger.info("Incorrect number of arguments presented")
+    exit(0)
+
+if sys.argv[1] == "--help":
+    logger.info("Options:");
+    logger.info("--inst=<LOCATION OF node_exporter INSTALL> (required)")
+    logger.info("Soon to come: metric enabling/disabling")
+
+if len(sys.argv) == 4 and sys.argv[3][:7] == "--inst=":
+    #logger.debug("INSTALL PATH: " + sys.argv[3][7:])
+    install_len = len(sys.argv[3])
+
+    if sys.argv[3][install_len - 1] == '\n':
+        install_path = sys.argv[3][7:install_len - 1]
+    else:
+        install_path = sys.argv[3][7:]
+    logger.debug("INSTALL PATH: " + install_path)
+else:
+    logger.info("The required options were not passed during tool registration.")
+    logger.info("Run /opt/pbench-agent/tool-scripts/node-exporter --help for more info")
+    exit(0)
+
+if sys.argv[1] == "--start":
+    node_exp = subprocess.Popen(install_path + "/node_exporter")
+
+    args = ["less", "/root/pidholder.txt"]
+    save_pid = subprocess.Popen(args, shell=True)
+    pid_holder = open("/root/pidholder.txt",'w')
+    pid_holder.write(str(node_exp.pid))
+    pid_holder.close()
+
+    node_exp.wait()
+
+if sys.argv[1] == "--stop":
+    
+    pid_retriever = open("/root/pidholder.txt", 'r')
+    pid = pid_retriever.read()
+    pid_retriever.close
+
+    args = ["rm", "-f", "/root/pidholder.txt"]
+    delete_pid_holder = subprocess.Popen(args)
+
+    process = psutil.Process(int(pid))
+    process.terminate()
+    process.wait()
+    logger.debug("Job done! PID: " + pid)
+
+if sys.argv[1] == "--postprocess":
+    logger.debug("We done here")
+
+#logger.debug(str(sys.argv))
