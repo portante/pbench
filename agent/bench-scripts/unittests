@@ -41,10 +41,8 @@ cp ${_tdir}/postprocess/* ${_testopt}/bench-scripts/postprocess
 let res=res+${?}
 cp ${_tdir}/templates/* ${_testopt}/bench-scripts/templates
 let res=res+${?}
-cp -a $_tdir/../util-scripts/{getconf.py,require-rpm,pbench-*} $_testopt/util-scripts/
+cp -a $_tdir/../util-scripts/{require-rpm,pbench-*} $_testopt/util-scripts/
 let res=res+$?
-cp -a $_tdir/../../lib/* $_testopt/common/lib/
-let res=res+${?}
 cp -rH ${_tdir}/test-bin/* ${_testopt}/unittest-scripts/
 let res=res+${?}
 # replace real post-processing scripts with mocked ones
@@ -76,7 +74,6 @@ PATH=$(remove_path /opt/pbench-agent/bench-scripts ${PATH})
 PATH=$(remove_path /opt/pbench-agent/util-scripts ${PATH})
 # Allows us to intercept scp, ssh, rsync, etc.
 export PATH=${_testopt}/unittest-scripts:${_testopt}/util-scripts:${_testopt}/bench-scripts:${PATH}
-export PYTHONPATH=${_testopt}/common/lib:${PYTHONPATH}
 
 # Fixed timestamp output
 export _PBENCH_UNIT_TESTS=1
@@ -157,10 +154,10 @@ function _dump_logs {
     (
     if cd ${_testdir}/${1} > /dev/null 2>&1 ;then
         for f in $(find . -name user-benchmark.cmd 2> /dev/null | sort); do
-            _dump_file ${1} ${f}
+            _dump_file ${1} ${f:2}
         done
         for f in $(find . -name results.html 2> /dev/null | sort); do
-            _dump_file ${1} ${f}
+            _dump_file ${1} ${f:2}
         done
     fi
     )
@@ -230,7 +227,7 @@ function _setup_state {
         echo "ERROR: failed to create test pbench directory, \"${_testdir}\"" >&2
         exit 1
     fi
-    cp -a ${_tdir}/tests/Defaults/tools-default ${_tdir}/tests/Defaults/tool-triggers  ${_testdir}/
+    cp -a ${_tdir}/tests/Defaults/tools-v1-default ${_testdir}/
     mkdir ${_testtmp}
     if [[ ${?} -gt 0 ]]; then
         echo "ERROR: failed to create tmp directory, \"${_testtmp}\"" >&2
