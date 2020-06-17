@@ -98,6 +98,9 @@ class Tool(object):
             f"--dir={self.tool_dir}",
             self.tool_opts,
         ]
+
+        print("TESSSSSSSSST: " +  " ".join(args))
+
         self.logger.info("%s: start_tool -- %s", self.name, " ".join(args))
         self.start_process = subprocess.Popen(args)
 
