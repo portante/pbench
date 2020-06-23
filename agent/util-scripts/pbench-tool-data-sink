@@ -13,6 +13,8 @@
 
 import sys
 import os
+import socket
+import subprocess
 import json
 import hashlib
 import tempfile
@@ -324,6 +326,37 @@ def main(argv):
             )
             return 5
 
+    config = open("prometheus.yml", 'w')
+
+    config.write("global:\n  scrape_interval: 1s\n  evaluation_interval: 1s\n\n")
+    #config.write("alerting:\n  alertmanagers:\n  - static_configs:\n    - targets:\n\nrule_files:\n\n")
+    config.write("scrape_configs:\n  - job_name: \'prometheus\'\n    static_configs:\n    - targets: [\'localhost:9090\']\n\n")
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 80))
+    ip_address = s.getsockname()[0]
+    s.close()
+
+    for i in range(1):
+        config.write("  - job_name: \'local_node\'\n    static_configs:\n    - targets: [\'{}:9100\']\n\n".format(str(ip_address)))
+
+    config.close()
+
+    image = open("Dockerfile", 'w')
+    image.write("FROM prom/prometheus\nADD prometheus.yml /etc/prometheus/")
+    image.close()
+
+    args = ['podman', 'pull', 'prom/prometheus']
+    prom_pull = subprocess.Popen(args)
+    prom_pull.wait()
+
+    args = ['podman', 'build', '-t', 'custom-prom', '-f', './Dockerfile']
+    build = subprocess.Popen(args)
+    build.wait()
+
+    args = ['podman', 'run', '-p', '9090:9090', 'custom-prom']
+    run = subprocess.Popen(args)
+
     pidfile_name = "{}.pid".format(PROG)
     pfctx = pidfile.PIDFile(pidfile_name)
     with open("{}.out".format(PROG), "w") as sofp, open(
@@ -380,6 +413,12 @@ def main(argv):
                     os.unlink(pidfile_name)
                 except Exception:
                     logger.exception("Failed to remove pid file %s", pidfile_name)
+
+    run.terminate()
+    run.wait()
+
+    os.remove("prometheus.yml")
+    os.remove("Dockerfile")
 
     return 0
 
