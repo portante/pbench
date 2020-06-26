@@ -217,7 +217,11 @@ def main(argv):
     if os.environ.get("_PBENCH_UNIT_TESTS"):
         hostnames = "localhost"
     else:
-        hostnames = f"localhost {full_hostname}"
+        if full_hostname.startswith("localhost"):
+            hostnames = "localhost"
+        else:
+            hostnames = f"localhost {full_hostname}"
+            
     params = {"hostnames": hostnames, "tm_dir": tm_dir, "redis_port": redis_port}
 
     # 2. Start the Redis Server (config of port from agent config)
@@ -284,7 +288,7 @@ def main(argv):
     #   - leave a PID file for the tool data sink process
     #   - FIXME: use podman to start a tool-data-sink container
     tds_param_key = "tds-{}".format(group)
-    tds = dict(channel=channel, benchmark_run_dir=benchmark_run_dir)
+    tds = dict(channel=channel, benchmark_run_dir=benchmark_run_dir, group=group) #########HERE IS WHERE I ADD PROM CONFIG INFO
     try:
         redis_server.set(tds_param_key, json.dumps(tds))
     except Exception:

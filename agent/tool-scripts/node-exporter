@@ -72,4 +72,4 @@ if sys.argv[1] == "--stop":
 if sys.argv[1] == "--postprocess":
     logger.debug("We done here")
 
-logger.debug(str(sys.argv))
+#logger.debug(str(sys.argv))
