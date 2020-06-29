@@ -261,7 +261,6 @@ def main(argv):
                 redis_server = redis.Redis(host="localhost", port=redis_port, db=0)
                 pubsub = redis_server.pubsub()
                 pubsub.subscribe(started_channel)
-                logger.debug("Do I get here?") #NOTE: I DO NOT (SUBSCRIBE FAILS W/ CONN REFUSED)
                 chan = pubsub.listen()
                 # Pull off first message which is an acknowledgement we have
                 # successfully subscribed.
