@@ -218,7 +218,7 @@ def main(argv):
         hostnames = "localhost"
     else:
         if full_hostname.startswith("localhost"):
-            hostnames = "localhost"
+            hostnames = f"{full_hostname}"
         else:
             hostnames = f"localhost {full_hostname}"
             
@@ -304,7 +304,7 @@ def main(argv):
             os.P_WAIT,
             data_sink_path,
             data_sink,
-            "localhost",
+            full_hostname,
             str(redis_port),
             tds_param_key,
         )
