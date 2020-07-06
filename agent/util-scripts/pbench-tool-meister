@@ -49,8 +49,11 @@ import daemon
 import pidfile
 import redis
 import shutil
-
+import requests
+import hashlib
 from pathlib import Path
+from pbench.server.utils import md5sum
+
 
 
 class Tool(object):
@@ -476,7 +479,7 @@ class ToolMeister(object):
             _dir = Path(self._tmp_dir)
         else:
             try:
-                _dir = Path(data["directory"]).resolve()
+                _dir = Path(data["directory"]).resolve(strict=True)
             except Exception:
                 self.logger.exception(
                     "Failed to access provided result directory, %s", data["directory"]
@@ -625,10 +628,75 @@ class ToolMeister(object):
                 )
                 failures += 1
                 continue
-        # FIXME: implement tool data directory send to the data sink.
-        self.logger.info(
-            "%s: send_tool %s %s", self._hostname, self._group, self._directory
-        )
+
+        if self._hostname == self._controller:
+            self.logger.info(
+                "%s: send_tools (no-op) %s %s",
+                self._hostname,
+                self._group,
+                self._directory,
+            )
+        else:
+            tar_file = Path(self._tmp_dir, f"{self._hostname}.tar.xz")
+            tar_dir = Path(self._tmp_dir, self._hostname)
+            try:
+                # Invoke tar directly for efficiency.
+                retcode = os.spawnl(
+                    os.P_WAIT, "/usr/bin/tar", "tar", "-Jcf", tar_file, tar_dir,
+                )
+            except Exception:
+                self.logger.exception("Failed to create tools tar ball")
+            else:
+                if retcode != 0:
+                    self.logger.error(
+                        "Failed to create tools tar ball;" " return code: %d", retcode,
+                    )
+                else:
+                    try:
+                        tar_md5 = md5sum(tar_file)
+                    except Exception:
+                        self.logger.exception("Failed to read tools tar ball")
+                    else:
+                        self.logger.info(
+                            "%s: send_tool %s %s",
+                            self._hostname,
+                            self._group,
+                            self._directory,
+                        )
+                        headers = {"http-md5sum": tar_md5}
+                        directory_bytes = data["directory"].encode("utf-8")
+                        tool_data_ctx = hashlib.md5(directory_bytes).hexdigest()
+                        url = f"http://{self._controller}:8080/tool-data/{tool_data_ctx}/{self._hostname}"
+                        with tar_file.open("rb") as tar_fp:
+                            response = requests.put(url, headers=headers, data=tar_fp)
+                            if response.status_code != 200:
+                                self.logger.error(
+                                    "PUT '%s' failed with '%d', '%s'",
+                                    url,
+                                    response.status_code,
+                                    response.text,
+                                )
+                            else:
+                                self.logger.debug(
+                                    "PUT '%s' succeeded ('%d', '%s')",
+                                    url,
+                                    response.status_code,
+                                    response.text,
+                                )
+                                try:
+                                    shutil.rmtree(tar_dir)
+                                except Exception:
+                                    self.logger.exception(
+                                        "Failed to remove tool data hierarchy, '%s'",
+                                        tar_dir,
+                                    )
+            finally:
+                try:
+                    tar_file.unlink()
+                except Exception:
+                    self.logger.warning(
+                        "failed to remove tools tar ball, '%s'", tar_file
+                    )
         self._directory = None
         return failures
 

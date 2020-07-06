@@ -26,12 +26,44 @@ import pidfile
 import redis
 import errno
 from pathlib import Path
-from threading import Thread
-from bottle import Bottle, ServerAdapter, request, abort
 from datetime import datetime
-#from pbench-tool-meister-start import ToolGroup
+from threading import Thread, Lock, Condition
+from bottle import Bottle, ServerAdapter, request, abort
+from wsgiref.simple_server import make_server, WSGIRequestHandler
 
 _BUFFER_SIZE = 65536
+
+
+
+class QuietHandler(WSGIRequestHandler):
+    """QuietHandler - a simple class to ignore request logging.
+    """
+
+    def log_request(*args, **kw):
+        pass
+
+
+class DataSinkWSGIRefServer(ServerAdapter):
+    """A instance of a WSGI "simple server" with the option to "quiet" the request
+    logging.
+
+    Taken from https://stackoverflow.com/questions/11282218/bottle-web-framework-how-to-stop.
+    """
+
+    def __init__(self, *args, quiet=False, **kw):
+        super().__init__(*args, **kw)
+        if quiet:
+            self.options["handler_class"] = QuietHandler
+        self._server = None
+
+    def run(self, handler):
+        assert self._server is None, f"'run' method called twice"
+        self._server = make_server(self.host, self.port, handler, **self.options)
+        self._server.serve_forever()
+
+    def stop(self):
+        if self._server is not None:
+            self._server.shutdown()
 
 
 class ToolDataSink(Bottle):
@@ -39,19 +71,154 @@ class ToolDataSink(Bottle):
     sent from tool meisters via an HTTP PUT method.
     """
 
-    def __init__(self, benchmark_run_dir, logger):
+    class Terminate(Exception):
+        pass
+
+    def __init__(self, redis_server, channel, benchmark_run_dir, logger):
         super(ToolDataSink, self).__init__()
+        # Save external state
+        self.redis_server = redis_server
+        self.channel = channel
         self.benchmark_run_dir = benchmark_run_dir
         self.logger = logger
+        # Initialize internal state
+        self._hostname = os.environ["full_hostname"]
         self.state = None
         self.tool_data_ctx = None
         self.directory = None
         self._data = None
+        self._tm_tracking = None
+        self._put_count = 0
+        self._lock = Lock()
+        self._cv = Condition(lock=self._lock)
+        # Setup the Bottle server route and the WSGI server instance.
         self.route(
             "/tool-data/<tool_data_ctx>/<hostname>",
             method="PUT",
             callback=self.put_document,
         )
+
+        self._server = DataSinkWSGIRefServer(host="localhost", port=8080)
+        # Setup the Redis server channel subscription
+        self._pubsub = redis_server.pubsub()
+        self._pubsub.subscribe(channel)
+        self._chan = self._pubsub.listen()
+        # Pull off first message which is an acknowledgement we have
+        # successfully subscribed.
+        resp = next(self._chan)
+        assert resp["type"] == "subscribe", f"bad type: {resp!r}"
+        assert resp["pattern"] is None, f"bad pattern: {resp!r}"
+        assert resp["channel"].decode("utf-8") == channel, f"bad channel: {resp!r}"
+        assert resp["data"] == 1, f"bad data: {resp!r}"
+        # Tell the entity that started us who we are indicating we're ready.
+        started_msg = dict(kind="ds", hostname=self._hostname, pid=os.getpid())
+        redis_server.publish(f"{channel}-start", json.dumps(started_msg))
+
+    def run(self):
+        """run - Start the Bottle web server running and the watcher thread.
+        """
+        watcher_thread = Thread(target=self.watcher)
+        watcher_thread.start()
+
+        self.logger.info("Running...")
+        super().run(server=self._server)
+
+        self.logger.debug("Waiting for the watcher thread to exit ...")
+        watcher_thread.join()
+
+    def _cleanup(self):
+        """_cleanup - Encapsulates the proper shutdown sequence for the WSGI server
+        and Redis Server connection.
+        """
+        try:
+            self._pubsub.unsubscribe()
+            self._pubsub.close()
+        except Exception:
+            self.logger.exception(
+                "failed to properly close the Redis server connection state"
+            )
+        self._server.stop()
+
+    def watcher(self):
+        """Simple function for the thread that is "watching" for the terminate
+        state.
+        """
+        self.logger.info("watcher started")
+        try:
+            for payload in self._chan:
+                try:
+                    json_str = payload["data"].decode("utf-8")
+                except Exception:
+                    self.logger.warning(
+                        "data payload in message not UTF-8, '%r'", json_str
+                    )
+                    continue
+                self.logger.debug('watcher: channel payload, "%r"', json_str)
+                try:
+                    data = json.loads(json_str)
+                except json.JSONDecodeError:
+                    self.logger.warning(
+                        "data payload in message not JSON, '%s'", json_str
+                    )
+                    continue
+                else:
+                    try:
+                        data["state"]
+                    except KeyError:
+                        self.logger.warning(
+                            "unrecognized data payload in message," " '%s'", json_str
+                        )
+                    else:
+                        self.state_change(data)
+        except self.Terminate as exc:
+            self.logger.info("%s", exc)
+        except redis.exceptions.ConnectionError:
+            self.logger.warning(
+                "watcher closing down after losing connection to redis server"
+            )
+        except Exception:
+            self.logger.exception("watcher exception")
+        finally:
+            self._cleanup()
+
+    def _fetch_tms(self):
+        """_fetch_tms - fetch all the Tool Meister data for all recorded tool
+        meisters in the Redis server under the tm-pids key.
+
+        We return to the caller a dictionary indexed by the host name of each
+        tool meister found.
+
+        NOTE: this method should only be called when we know the "tm-pids" key
+        is properly populated.
+        """
+        tms = {}
+        pids_json_str_raw = self.redis_server.get("tm-pids")
+        if pids_json_str_raw is None:
+            raise Exception("Missing 'tm-pids' data on Redis server")
+        self.logger.debug("tm-pids: %r", pids_json_str_raw)
+        try:
+            pids_json_str = pids_json_str_raw.decode("utf-8")
+            pids = json.loads(pids_json_str)
+        except Exception as exc:
+            raise Exception(f"failed parse 'tm-pids' JSON payload, '{exc}'")
+        else:
+            # Double check our data sink entry is as expected.
+            assert pids["ds"]["kind"] == "ds", f"what? {pids['ds']!r}"
+            assert pids["ds"]["pid"] == os.getpid(), f"what? {pids['ds']!r}"
+            assert pids["ds"]["hostname"] == self._hostname, f"what? {pids['ds']!r}"
+            for tm in pids["tm"]:
+                assert tm["kind"] == "tm", f"what? {tm!r}"
+                if tm["hostname"] == self._hostname:
+                    # The "localhost" tool meister instance does not send data
+                    # to the tool data sink, it just writes it locally.
+                    continue
+                # Posted is None to start, "yes" when we receive data for Tool
+                # Mesiter host, "waiting" when in the "sending" state, and
+                # "dormant" in other states indicating we should not be
+                # receiving any data at that time.
+                tm["posted"] = None
+                tms[tm["hostname"]] = tm
+        return tms
 
     def _wait_for_all_data(self):
         """wait_for_all_data - block the caller until all of the registered
@@ -60,11 +227,55 @@ class ToolDataSink(Bottle):
         Waiting is a no-op for all states except 'send'.  In the 'send' state,
         we are expecting to hear from all registered tool meisters.
         """
-        if self.state == "send":
-            # FIXME - How are we going to do this?
-            pass
-        self.logger.info("HERE IN W4AD")
-        return 0
+
+        if self.state != "send":
+            return
+
+        with self._lock:
+            assert (
+                self._tm_tracking is not None
+            ), f"Logic bomb! self._tm_tracking is None"
+            done = False
+            while not done:
+                for hostname, tm in self._tm_tracking.items():
+                    if tm["posted"] is None or tm["posted"] == "dormant":
+                        done = True
+                        # Don't bother checking any other Tool Meister.  If we
+                        # have one that has not been setup or is dormant, we
+                        # don't need to wait at all.
+                        break
+                    if tm["posted"] == "waiting":
+                        # Don't bother checking any other Tool Meister when we
+                        # have at least one that has not sent any data.
+                        break
+                    assert tm["posted"] == "yes", f"Logic bomb! {tm['posted']!r}"
+                else:
+                    # We have checked every Tool Meister tracking record and
+                    # they all have posted.  So we can safely exit the wait
+                    # loop
+                    done = True
+                if not done:
+                    while self._put_count == 0:
+                        self._cv.wait()
+        return
+
+    def _change_tm_tracking(self, curr, new):
+        """_change_tm_tracking - if we have a tool meister tracking dictionary
+        update the posted state from the current expected value to the target
+        new value.
+
+        No changes take place if the tool meister tracking dictionary does not
+        exist yet.
+
+        Assumes self._lock is already acquired by our caller.
+        """
+        if self._tm_tracking is None:
+            return
+        for hostname, tm in self._tm_tracking.items():
+            assert (
+                tm["posted"] is None or tm["posted"] == curr
+            ), f"_change_tm_tracking unexpected tm posted value, {tm!r}"
+            tm["posted"] = new
 
     def state_change(self, data):
         """state_change - give a data dictionary, change the state for this
@@ -72,30 +283,75 @@ class ToolDataSink(Bottle):
 
         The "watcher" thread has already validated the state field, we then
         validate the directory field.
+
+        Public method, returns None, raises no exceptions explicitly, called
+        by the "watcher" thread.
         """
-        directory = Path(data["directory"])
+        # We have a valid state change data set, wait for all the tool
+        # meisters before proceeding.
+        self._wait_for_all_data()
+
+
+        if self.state is None:
+            # This is the first published state change we have received.  We
+            with self._lock:
+                assert self._tm_tracking is None, (
+                    f"Logic bomb! self._tm_tracking '{self._tm_tracking!r}'"
+                    " is not None"
+                )
+                # Typically, we only call this method once when the Tool Data
+                # Sink first starts since the list of Tool Meister's is
+                # static.  We call it when we get the first message to
+                # be sure the "tm-pids" key exists.
+                #
+                # FIXME: what happens when a Tool Meister dies, and rejoins?
+                self._tm_tracking = self._fetch_tms()
+
+        self._data = data
+        self.state = data["state"]
+        if self.state == "terminate":
+            raise self.Terminate("Terminate bottle server")
+        directory_str = data["directory"]
+        directory = Path(directory_str)
         if not directory.is_dir():
             self.logger.error(
                 "state change to '{}' with non-existent directory, '{}'",
                 data["state"],
                 directory,
             )
-
-        # We have a valid state change data set, wait for all the tool
-        # meisters before proceeding.
-        self._wait_for_all_data()
-
-        self._data = data
-        self.state = data["state"]
         self.directory = directory
         # The tool meisters will be hashing the directory argument this way
-        # when invoking the PUT methed.  They just consider the directory
+        # when invoking the PUT method.  They just consider the directory
         # argument to be an opaque context. We, the tool data sink, write the
         # data we receive to that directory.
-        self.tool_data_ctx = hashlib.md5(data["directory"].encode("utf-8")).hexdigest()
-        self.logger.info("STATE CHANGED")
+        directory_bytes = directory_str.encode("utf-8")
+        self.tool_data_ctx = hashlib.md5(directory_bytes).hexdigest()
+
+        # Transition to "send" state should reset self._tm_tracking
+        with self._lock:
+            # We should never see a positive PUT count as all data should have
+            # been received by now.
+            assert (
+                self._put_count == 0
+            ), f"Logic bomb! self._put_count '{self._put_count}' != 0"
+            if self.state == "send":
+                self._change_tm_tracking("dormant", "waiting")
+            elif self.state == "start":
+                self._change_tm_tracking("yes", "dormant")
+            else:
+                assert self.state == "stop", f"Unexpected state, '{self.state}'"
+                # Nothing to do, no data movement for "stop"
 
     def put_document(self, tool_data_ctx, hostname):
+        """put_document - PUT callback method for Bottle web server end point
+
+        The put_document method is called by threads serving web requests.
+        There can be N threads configured at one time calling this method.
+
+        Public method, returns None, raises no exceptions directly, calls the
+        Bottle abort() method for error handling.
+
+        """
         if self.state != "send":
             # FIXME: Don't we have a race condition if the tool meisters
             # process their messages first?  Seems like we need to send to the
@@ -179,140 +435,14 @@ class ToolDataSink(Bottle):
                 host_tool_data_tb_name,
                 host_tool_data_tb_name,
             )
-
-
-class DataSinkWSGIRefServer(ServerAdapter):
-    """A singleton instance of a WSGI "simple server".
-
-    Taken from https://stackoverflow.com/questions/11282218/bottle-web-framework-how-to-stop.
-    """
-
-    server = None
-    quiet = False
-
-    def run(self, handler):
-        from wsgiref.simple_server import make_server, WSGIRequestHandler
-
-        if self.quiet:
-
-            class QuietHandler(WSGIRequestHandler):
-                def log_request(*args, **kw):
-                    pass
-
-            self.options["handler_class"] = QuietHandler
-        self.server = make_server(self.host, self.port, handler, **self.options)
-        self.server.serve_forever()
-
-    def stop(self):
-        # self.server.server_close() <--- alternative but causes bad fd exception
-        if self.server is not None:
-            self.server.shutdown()
-
-
-def watcher(redis_server, channel, server, tool_data_sink_app, logger):
-    """Simple function for the thread that is "watching" for the terminate
-    state.
-    """
-
-    logger.info("watcher started")
-    pubsub = redis_server.pubsub()
-    pubsub.subscribe(channel)
-    chan = pubsub.listen()
-    try:
-        # Pull off first message which is an acknowledgement we have
-        # successfully subscribed.
-        resp = next(chan) 
-    except redis.exceptions.ConnectionError:
-        logger.warning("watcher closing down after losing connection to redis serveri (FIRST TEST)")
-        error = True
-    except Exception:
-        logger.exception("watcher exception (FIRST TEST)")
-        error = True
-    else:
-        error = False
-    if error:
-        try:
-            pubsub.unsubscribe()
-            pubsub.close()
-        except Exception:
-            logger.exception("Watcher failed to unsub/close")
-        else:
-            logger.info("FIRST HERE")
-        server.stop()
-        return
-
-    assert resp["type"] == "subscribe", "bad type: {!r}".format(resp)
-    assert resp["pattern"] is None, "bad pattern: {!r}".format(resp)
-    assert resp["channel"].decode("utf-8") == channel, "bad channel: {!r}".format(
-        resp
-    )
-    assert resp["data"] == 1, "bad data: {!r}".format(resp)
-
-    # Tell the entity that started us who we are indicating we're ready.
-    started_msg = dict(kind="ds", hostname=os.environ["full_hostname"], pid=os.getpid())
-
-    try:
-        redis_server.publish("{}-start".format(channel), json.dumps(started_msg))
-    except redis.exceptions.ConnectionError:
-        logger.warning("watcher closing down after losing connection to redis serveri (2ND TEST)")
-        error = True
-    except Exception:
-        logger.exception("watcher exception (2ND TEST)")
-        error = True
-    else:
-        error = False
-    if error:
-        try:
-            pubsub.unsubscribe()
-            pubsub.close()
-        except Exception:
-            logger.exception("Watcher failed to unsub/close")
-        else:
-            logger.info("2ND HERE")
-        server.stop()
-        return
-
-    try:
-        for payload in chan:
-            try:
-                json_str = payload["data"].decode("utf-8")
-            except Exception:
-                logger.warning("data payload in message not UTF-8, '%r'", json_str)
-                continue
-            logger.debug('watcher: channel payload, "%r"', json_str)
-            try:
-                data = json.loads(json_str)
-            except json.JSONDecodeError:
-                logger.warning("data payload in message not JSON, '%s'", json_str)
-                continue
-            else:
-                try:
-                    l_state = data["state"]
-                except KeyError:
-                    logger.warning(
-                        "unrecognized data payload in message," " '%s'", json_str
-                    )
-                else:
-                    if l_state == "terminate":
-                        # FIXME: stop bottle server
-                        logger.info("Terminating bottle server ...")
-                        return
-                    else:
-                        logger.info("CALLING APP STATE CHANGE")
-                        tool_data_sink_app.state_change(data)
-    except redis.exceptions.ConnectionError:
-        logger.exception("watcher closing down after losing connection to redis server")
-    except Exception:
-        logger.exception("watcher exception")
-    finally:
-        try:
-            pubsub.unsubscribe()
-            pubsub.close()
-        except Exception:
-            logger.exception("Watcher failed to unsub/close")
-        else:
-            logger.info("HERE")
-        server.stop()
+            # Tell the waiting "watcher" thread engaging in a "state" change
+            # that another PUT document has arrived.
+            with self._lock:
+                tm_tracker = self._tm_tracking[hostname]
+                assert tm_tracker["posted"] == "waiting", f"tm_tracker = {tm_tracker!r}"
+                tm_tracker["posted"] = "yes"
+                self._put_count += 1
+                self._cv.notify()
 
 def prometheus_launch():
     config = open("prometheus.yml", 'w')
@@ -351,12 +481,11 @@ def prometheus_launch():
 
     return (run, volume)
 
-
 def main(argv):
     PROG = Path(argv[0]).name
 
     logger = logging.getLogger(PROG)
-    fh = logging.FileHandler("{}.log".format(PROG))
+    fh = logging.FileHandler(f"{PROG}.log")
     if os.environ.get("_PBENCH_UNIT_TESTS"):
         fmtstr = "%(levelname)s %(name)s %(funcName)s -- %(message)s"
     else:
@@ -366,9 +495,9 @@ def main(argv):
         )
     fhf = logging.Formatter(fmtstr)
     fh.setFormatter(fhf)
-    fh.setLevel(logging.DEBUG)
+    fh.setLevel(logging.INFO)
     logger.addHandler(fh)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
 
     try:
         redis_host = argv[1]
@@ -420,11 +549,9 @@ def main(argv):
     #run = None
     run,volume = prometheus_launch()
 
-    pidfile_name = "{}.pid".format(PROG)
+    pidfile_name = f"{PROG}.pid"
     pfctx = pidfile.PIDFile(pidfile_name)
-    with open("{}.out".format(PROG), "w") as sofp, open(
-        "{}.err".format(PROG), "w"
-    ) as sefp:
+    with open(f"{PROG}.out", "w") as sofp, open(f"{PROG}.err", "w") as sefp:
         with daemon.DaemonContext(
             stdout=sofp,
             stderr=sefp,
@@ -438,9 +565,7 @@ def main(argv):
                 # are "daemonized".
                 try:
                     redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
-                    logger.info("Before get")
-                    redis_server.get(param_key)
-                    logger.info("...and after")
+
                 except Exception as e:
                     logger.error(
                         "Unable to connect to redis server, %s:%s: %s",
@@ -450,27 +575,8 @@ def main(argv):
                     )
                     return 2
 
-
-                #run,volume = prometheus_launch()
-
-                # We need the server handle before we start the watcher thread.
-                server = DataSinkWSGIRefServer(host="localhost", port=8080)
-                tds_app = ToolDataSink(benchmark_run_dir, logger)
-
-                watcher_thread = Thread(
-                    target=watcher,
-                    args=(redis_server, channel, server, tds_app, logger),
-                )
-                watcher_thread.start()
-
-
-                logger.info("Running...")
-                tds_app.run(server=server)
-
-                
-                #run,volume = prometheus_launch()
-
-                watcher_thread.join()
+                tds_app = ToolDataSink(redis_server, channel, benchmark_run_dir, logger)
+                tds_app.run()
             except OSError as exc:
                 if exc.errno == errno.EADDRINUSE:
                     logger.error(
