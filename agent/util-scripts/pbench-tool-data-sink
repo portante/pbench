@@ -29,7 +29,6 @@ from pathlib import Path
 from threading import Thread
 from bottle import Bottle, ServerAdapter, request, abort
 from datetime import datetime
-#from pbench-tool-meister-start import ToolGroup
 
 _BUFFER_SIZE = 65536
 

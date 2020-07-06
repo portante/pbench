@@ -15,7 +15,7 @@ pbench_bin="`cd ${script_path}/..; /bin/pwd`"
 
 # Defaults
 group=default
-dir="/tmp"
+dir=""
 # array containing all the possible sysinfo options
 sysinfo_opts_default=( block libvirt kernel_config security_mitigations sos topology )
 sysinfo_opts_available=( block libvirt kernel_config security_mitigations sos topology ara stockpile insights )
@@ -145,10 +145,14 @@ if [[ "${name}" != "beg" && "${name}" != "end" ]]; then
 	exit 1
 fi
 
+if [[ -z "${dir}" ]]; then
+	error_log "Missing argument, need a directory in which to store collected sysinfo"
+	exit 1
+fi
+
 # Make sure that the top-level directory exists no matter what
-mkdir -p ${dir}
 if [[ ! -d ${dir} ]]; then
-	error_log "Unable to create working directory, \"${dir}\""
+	error_log "Directory argument is not a valid working directory, \"${dir}\""
 	exit 1
 fi
 
@@ -163,6 +167,7 @@ fi
 
 sysinfo_path="${dir}/sysinfo/${name}"
 if [[ -d ${sysinfo_path} ]]; then
+	ls -ld ${sysinfo_path} >&2
 	debug_log "Already collected sysinfo-dump data, named: ${name}; skipping..."
 	exit 0
 fi
@@ -212,7 +217,7 @@ for dirent in $(/bin/ls -1 ${tool_group_dir}); do
 	fi
 	hostdir="${dirent}"
 	label="$(cat ${tool_group_dir}/${hostdir}/__label__ 2> /dev/null)"
-	if [[ "${hostdir}" == "localhost" ]]; then
+	if [[ "${hostdir}" == "localhost" || "${hostdir}" == "${hostname}" || "${hostdir}" == "${full_hostname}" ]]; then
 		# We found local tools specified in the tools group directory,
 		# so we should collect sysinfo data locally.
 		pbench-sysinfo-dump "${sysinfo_path}" "${sysinfo}" "${label}" &

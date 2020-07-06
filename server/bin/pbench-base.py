@@ -7,9 +7,10 @@ from argparse import ArgumentParser
 
 # Export all the expected pbench config file attributes for the
 # existing shell scripts.  This maintains the single-source-of-
-# truth for those definitions in the PbenchConfig class, but
+# truth for those definitions in the PbenchServerConfig class, but
 # still accessible to all pbench bash shell scripts.
-from pbench import BadConfig, PbenchConfig
+from pbench.server import PbenchServerConfig
+from pbench.common.exceptions import BadConfig
 
 if __name__ != "__main__":
     sys.exit(1)
@@ -40,8 +41,8 @@ if not parsed.cfg_name:
     )
     if not os.path.exists(config_name):
         print(
-            "{}: No config file specified: set _PBENCH_SERVER_CONFIG env variable or use"
-            " --config <file> on the command line".format(_prog),
+            f"{_prog}: No config file specified: set _PBENCH_SERVER_CONFIG env variable or use"
+            f" --config <file> on the command line",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -49,9 +50,9 @@ else:
     config_name = parsed.cfg_name
 
 try:
-    config = PbenchConfig(config_name)
+    config = PbenchServerConfig(config_name)
 except BadConfig as e:
-    print("{}: {} (config file {})".format(_prog, e, config_name), file=sys.stderr)
+    print(f"{_prog}: {e} (config file {config_name})", file=sys.stderr)
     sys.exit(1)
 
 # Exclude the "files" and "conf" attributes from being exported
@@ -65,11 +66,10 @@ vars = sorted(
 )
 for att in vars:
     try:
-        os.environ[att] = getattr(config, att)
+        os.environ[att] = str(getattr(config, att))
     except AttributeError:
         print(
-            '{}: Missing internal pbench attribute, "{}", in'
-            " configuration".format(_prog, att),
+            f'{_prog}: Missing internal pbench attribute, "{att}", in configuration',
             file=sys.stderr,
         )
         sys.exit(1)
@@ -77,6 +77,6 @@ for att in vars:
 if config._unittests:
     os.environ["_PBENCH_SERVER_TEST"] = "1"
 
-cmd = "{}.sh".format(sys.argv[1])
+cmd = f"{sys.argv[1]}.sh"
 args = [cmd] + sys.argv[2:]
 os.execv(cmd, args)

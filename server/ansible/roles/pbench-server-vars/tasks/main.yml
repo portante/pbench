@@ -5,12 +5,11 @@
 
 # pbench install directory
 - name: fetch the pbench install directory from remote
-  shell: "{{ scl }} getconf.py install-dir pbench-server"
+  shell: "{{ scl }} pbench-config install-dir pbench-server"
   register: cmd_output
   environment:
     _PBENCH_SERVER_CONFIG: "{{ pbench_server_install_dir }}/lib/config/pbench-server.cfg"
     PATH: "{{ pbench_server_install_dir }}/bin:/usr/bin"
-    PYTHONPATH: "{{ pbench_server_install_dir }}/lib:"
 
 - set_fact:
     pbench_dir: "{{ cmd_output.stdout_lines[0].strip() }}"
@@ -21,12 +20,11 @@
 
 # pbench top level directory
 - name: fetch the top-level pbench directory from remote
-  shell: "{{ scl }} getconf.py pbench-top-dir pbench-server"
+  shell: "{{ scl }} pbench-config pbench-top-dir pbench-server"
   register: cmd_output
   environment:
     _PBENCH_SERVER_CONFIG: "{{ pbench_server_install_dir }}/lib/config/pbench-server.cfg"
     PATH: "{{ pbench_server_install_dir }}/bin:/usr/bin"
-    PYTHONPATH: "{{ pbench_server_install_dir }}/lib:"
 
 - set_fact:
     pbench_dir: "{{ cmd_output.stdout_lines[0].strip() }}"
@@ -37,12 +35,11 @@
 
 # pbench logs dir
 - name: fetch the logs directory
-  shell: "{{ scl }} getconf.py pbench-logs-dir pbench-server"
+  shell: "{{ scl }} pbench-config pbench-logs-dir pbench-server"
   register: cmd_output
   environment:
     _PBENCH_SERVER_CONFIG: "{{ pbench_server_install_dir }}/lib/config/pbench-server.cfg"
     PATH: "{{ pbench_server_install_dir }}/bin:/usr/bin"
-    PYTHONPATH: "{{ pbench_server_install_dir }}/lib:"
 
 - set_fact:
     pbench_logs_dir: "{{ cmd_output.stdout_lines[0].strip() }}"
@@ -53,12 +50,11 @@
 
 # pbench tmp dir
 - name: fetch the tmp directory
-  shell: "{{ scl }} getconf.py pbench-tmp-dir pbench-server"
+  shell: "{{ scl }} pbench-config pbench-tmp-dir pbench-server"
   register: cmd_output
   environment:
     _PBENCH_SERVER_CONFIG: "{{ pbench_server_install_dir }}/lib/config/pbench-server.cfg"
     PATH: "{{ pbench_server_install_dir }}/bin:/usr/bin"
-    PYTHONPATH: "{{ pbench_server_install_dir }}/lib:"
 
 - set_fact:
     pbench_tmp_dir: "{{ cmd_output.stdout_lines[0].strip() }}"
@@ -69,12 +65,11 @@
 
 # pbench quarantine dir
 - name: fetch the quarantine directory
-  shell: "{{ scl }} getconf.py pbench-quarantine-dir pbench-server"
+  shell: "{{ scl }} pbench-config pbench-quarantine-dir pbench-server"
   register: cmd_output
   environment:
     _PBENCH_SERVER_CONFIG: "{{ pbench_server_install_dir }}/lib/config/pbench-server.cfg"
     PATH: "{{ pbench_server_install_dir }}/bin:/usr/bin"
-    PYTHONPATH: "{{ pbench_server_install_dir }}/lib:"
 
 - set_fact:
     pbench_quarantine_dir: "{{ cmd_output.stdout_lines[0].strip() }}"
@@ -85,13 +80,12 @@
 
 # pbench hostinfo prefix
 - name: fetch the host info prefix
-  shell: "{{ scl }} getconf.py host-info-path-prefix results"
+  shell: "{{ scl }} pbench-config host-info-path-prefix results"
   register: cmd_output
   ignore_errors: yes
   environment:
     _PBENCH_SERVER_CONFIG: "{{ pbench_server_install_dir }}/lib/config/pbench-server.cfg"
     PATH: "{{ pbench_server_install_dir }}/bin:/usr/bin"
-    PYTHONPATH: "{{ pbench_server_install_dir }}/lib:"
 
 - set_fact:
     pbench_host_info_prefix: "{{ cmd_output.stdout_lines[0].strip() }}"
@@ -102,13 +96,12 @@
 
 # pbench reception area
 - name: fetch the reception area directory
-  shell: "{{ scl }} getconf.py pbench-receive-dir-prefix pbench-server"
+  shell: "{{ scl }} pbench-config pbench-receive-dir-prefix pbench-server"
   register: cmd_output
   ignore_errors: yes
   environment:
     _PBENCH_SERVER_CONFIG: "{{ pbench_server_install_dir }}/lib/config/pbench-server.cfg"
     PATH: "{{ pbench_server_install_dir }}/bin:/usr/bin"
-    PYTHONPATH: "{{ pbench_server_install_dir }}/lib:"
 
 - set_fact:
     pbench_reception_dir_prefix: "{{ cmd_output.stdout_lines[0].strip() }}"
@@ -119,12 +112,11 @@
 
 # httpd document root
 - name: fetch the httpd document root directory
-  shell: "{{ scl }} getconf.py documentroot apache"
+  shell: "{{ scl }} pbench-config documentroot apache"
   register: cmd_output
   environment:
     _PBENCH_SERVER_CONFIG: "{{ pbench_server_install_dir }}/lib/config/pbench-server.cfg"
     PATH: "{{ pbench_server_install_dir }}/bin:/usr/bin"
-    PYTHONPATH: "{{ pbench_server_install_dir }}/lib:"
 
 - set_fact:
     httpd_document_root_dir: "{{ cmd_output.stdout_lines[0].strip() }}"
@@ -135,12 +127,11 @@
 
 # pbench owner
 - name: fetch the pbench owner
-  shell: "{{ scl }} getconf.py user pbench-server"
+  shell: "{{ scl }} pbench-config user pbench-server"
   register: cmd_output
   environment:
     _PBENCH_SERVER_CONFIG: "{{ pbench_server_install_dir }}/lib/config/pbench-server.cfg"
     PATH: "{{ pbench_server_install_dir }}/bin:/usr/bin"
-    PYTHONPATH: "{{ pbench_server_install_dir }}/lib:"
 
 - set_fact:
     pbench_user: "{{ cmd_output.stdout_lines[0].strip() }}"
@@ -151,12 +142,11 @@
 
 # pbench group
 - name: fetch the pbench group
-  shell: "{{ scl }} getconf.py group pbench-server"
+  shell: "{{ scl }} pbench-config group pbench-server"
   register: cmd_output
   environment:
     _PBENCH_SERVER_CONFIG: "{{ pbench_server_install_dir }}/lib/config/pbench-server.cfg"
     PATH: "{{ pbench_server_install_dir }}/bin:/usr/bin"
-    PYTHONPATH: "{{ pbench_server_install_dir }}/lib:"
 
 - set_fact:
     pbench_group: "{{ cmd_output.stdout_lines[0].strip() }}"
@@ -167,12 +157,11 @@
 
 # pbench host
 - name: fetch the pbench server
-  shell: "{{ scl }} getconf.py host pbench-server"
+  shell: "{{ scl }} pbench-config host pbench-server"
   register: cmd_output
   environment:
     _PBENCH_SERVER_CONFIG: "{{ pbench_server_install_dir }}/lib/config/pbench-server.cfg"
     PATH: "{{ pbench_server_install_dir }}/bin:/usr/bin"
-    PYTHONPATH: "{{ pbench_server_install_dir }}/lib:"
 
 - set_fact:
     pbench_host: "{{ cmd_output.stdout_lines[0].strip() }}"
@@ -183,12 +172,11 @@
 
 # pbench contact email address
 - name: fetch the contact email address
-  shell: "{{ scl }} getconf.py admin-email pbench-server"
+  shell: "{{ scl }} pbench-config admin-email pbench-server"
   register: cmd_output
   environment:
     _PBENCH_SERVER_CONFIG: "{{ pbench_server_install_dir }}/lib/config/pbench-server.cfg"
     PATH: "{{ pbench_server_install_dir }}/bin:/usr/bin"
-    PYTHONPATH: "{{ pbench_server_install_dir }}/lib:"
 
 - set_fact:
     mailaddr: "{{ cmd_output.stdout_lines[0].strip() }}"

@@ -364,6 +364,8 @@ declare -A tools=(
     [test-51]="test-start-stop-tool-meister"
     [test-52]="test-start-stop-tool-meister"
     [test-53]="test-client-tool-meister"
+    [test-54]="pbench-collect-sysinfo"
+    [test-55]="pbench-collect-sysinfo"
 )
 
 declare -A options=(
@@ -431,6 +433,8 @@ declare -A options=(
     [test-47]="--name=mpstat --no-install --remotes=@${_testdir}/tmp/remotes.lis --labels=labelOne,labelTwo"
     [test-49]="--prefix=foo/bar3% --user=ndk20%"
     [test-52]="mygroup"
+    [test-54]="bad"
+    [test-55]="--dir=${_testdir}/mock-run end"
 )
 
 declare -A expected_status=(
@@ -450,6 +454,7 @@ declare -A expected_status=(
     [test-44]=1
     [test-46]=1
     [test-47]=1
+    [test-54]=1
 )
 
 declare -A pre_hooks=(
@@ -464,6 +469,7 @@ declare -A pre_hooks=(
     [test-46]='mkdir ${_testdir}/tmp; printf -- "# bad list\none.example.com\ntwo.example.com,labelTwo\n\nthree.example.com,labelThree,junk\n" > ${_testdir}/tmp/remotes.lis'
     [test-47]='mkdir ${_testdir}/tmp; printf -- "# good list with no labels\none.example.com\ntwo.example.com\nthree.example.com\n" > ${_testdir}/tmp/remotes.lis'
     [test-48]='mkdir ${_testdir}/tmp; printf -- "%s\n" "30%" > ${_testdir}/tmp/foo.txt'
+    [test-55]='pbench-register-tool --name=mpstat --remote=localhost > /dev/null; mkdir ${_testdir}/mock-run'
 )
 
 declare -A post_hooks=(

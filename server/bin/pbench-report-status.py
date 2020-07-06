@@ -6,8 +6,9 @@ import sys
 from argparse import ArgumentParser
 from socket import gethostname
 
-from pbench import BadConfig, PbenchConfig
-from pbench.report import Report
+from pbench.server import PbenchServerConfig
+from pbench.common.exceptions import BadConfig
+from pbench.server.report import Report
 
 if __name__ != "__main__":
     sys.exit(1)
@@ -65,9 +66,9 @@ parsed = parser.parse_args()
 
 
 try:
-    config = PbenchConfig(parsed.cfg_name)
+    config = PbenchServerConfig(parsed.cfg_name)
 except BadConfig as e:
-    print("{}: {}".format(_prog, e), file=sys.stderr)
+    print(f"{_prog}: {e}", file=sys.stderr)
     sys.exit(1)
 
 

@@ -2,3 +2,13 @@ ansible
 elasticsearch
 sh
 boto3
+requests
+werkzeug
+flask
+flask-restful
+click
+cffi
+redis
+python-pidfile
+python-daemon
+bottle

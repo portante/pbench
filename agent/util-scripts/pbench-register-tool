@@ -24,7 +24,7 @@ pbench_bin="$(realpath -e ${script_path}/..)"
 #     * If the user registers the local host, we always use the full hostname,
 #       ${full_hostname}
 #     * All other names are considered "remote" host names
-#   * Under each host name directory are tool and an optional "__label__ file
+#   * Under each host name directory are tool and an optional "__label__" file
 #     * Each tool file is named after the tool for which each line of the file
 #       contains a tool option
 #       * If a file symlink exists named "<tool>.__noinstall__", then auto-

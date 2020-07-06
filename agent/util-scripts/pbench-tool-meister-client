@@ -88,6 +88,9 @@ def main(argv):
     except Exception:
         logger.exception("Failed to publish client message")
     else:
+        # FIXME: We should be checking that the total number of subscribers
+        # that received the message match the number of expected tool meisters
+        # running, plus the tool data sink.
         logger.debug("publish() = %r", ret)
 
     return 0

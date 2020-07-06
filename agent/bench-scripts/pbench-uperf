@@ -27,12 +27,12 @@ pbench_bin="`cd ${script_path}/..; /bin/pwd`"
 export benchmark="uperf"
 benchmark_rpm=${benchmark}
 if [[ -z "$benchmark_bin" ]]; then
-    benchmark_bin=/usr/local/bin/$benchmark
+	benchmark_bin=/usr/local/bin/$benchmark
 fi
 ver="$(pbench-config version uperf)"
 if [[ -z "${ver}" ]]; then
-        error_log "${script_name}: package version is missing in config file"
-        exit 1
+	error_log "${script_name}: package version is missing in config file"
+	exit 1
 fi
 
 # Every bench-script follows a similar sequence:
@@ -499,21 +499,21 @@ pbench-collect-sysinfo --group=$tool_group --dir=$benchmark_run_dir --sysinfo=$s
 # Start the tool meisters on each registered local/remote host
 pbench-tool-meister-start "${tool_group}"
 if [[ ${?} != 0 ]]; then
-        error_log "[${script_name}]: failed to start the tool meisters."
-        exit 1
+	error_log "[${script_name}]: failed to start the tool meisters."
+	exit 1
 fi
 
 pbench-metadata-log --group=$tool_group --dir=$benchmark_run_dir beg
 
 function interrupt() {
-        # On abnormal exit, stop the tool meister ...
-        pbench-tool-meister-stop
+	# On abnormal exit, stop the tool meister ...
+	pbench-tool-meister-stop
 	if [[ ${?} != 0 ]]; then
-        	error_log "[${script_name}]: failed to stop the tool meisters on interrupt."
+		error_log "[${script_name}]: failed to stop the tool meisters on interrupt."
 	fi
-        # ... and make sure that the metadata log exists and is complete.
-        pbench-metadata-log --group=$tool_group --dir=${benchmark_run_dir} int
-        return 0
+	# ... and make sure that the metadata log exists and is complete.
+	pbench-metadata-log --group=$tool_group --dir=${benchmark_run_dir} int
+	return 0
 }
 trap "interrupt" INT QUIT TERM
 
@@ -752,7 +752,7 @@ pbench-metadata-log --group=$tool_group --dir=$benchmark_run_dir end
 # Stop the tool meisters on each registered local/remote host
 pbench-tool-meister-stop
 if [[ ${?} != 0 ]]; then
-        error_log "[${script_name}]: failed to stop the tool meisters."
+	error_log "[${script_name}]: failed to stop the tool meisters."
 fi
 
 pbench-collect-sysinfo --group=$tool_group --dir=$benchmark_run_dir --sysinfo=$sysinfo end

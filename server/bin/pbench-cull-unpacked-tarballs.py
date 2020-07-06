@@ -27,14 +27,12 @@ from datetime import datetime
 from argparse import ArgumentParser
 from configparser import ConfigParser, NoOptionError
 
-import pbench
-from pbench import (
-    PbenchConfig,
-    BadConfig,
-    get_pbench_logger,
-)
-from pbench.indexer import _STD_DATETIME_FMT
-from pbench.report import Report
+import pbench.server
+from pbench.server import PbenchServerConfig
+from pbench.common.exceptions import BadConfig
+from pbench.common.logger import get_pbench_logger
+from pbench.server.indexer import _STD_DATETIME_FMT
+from pbench.server.report import Report
 
 
 _NAME_ = "pbench-cull-unpacked-tarballs"
@@ -43,7 +41,7 @@ tb_pat_r = r"\S+_(\d\d\d\d)[._-](\d\d)[._-](\d\d)[T_](\d\d)[._:](\d\d)[._:](\d\d
 tb_pat = re.compile(tb_pat_r)
 
 
-class Action(object):
+class Action:
     """Action - A simple class to track individual actions taken towards the
     removal of a unpacked tar ball.
 
@@ -64,7 +62,7 @@ class Action(object):
         self.status = status
 
 
-class ActionSet(object):
+class ActionSet:
     """ActionSet - A simple class to track a set of actions taken, how many
     errors occurred, when they started and when they stopped.
     """
@@ -166,7 +164,7 @@ def remove_unpacked(tb_incoming_dir, controller_name, results, users, logger, dr
 
     Returns 0 on success, > 0 if any errors encountered.
     """
-    start = pbench._time()
+    start = pbench.server._time()
     if not dry_run:
         logger.info("Began removing unpacked tar ball directory, '{}'", tb_incoming_dir)
 
@@ -181,7 +179,7 @@ def remove_unpacked(tb_incoming_dir, controller_name, results, users, logger, dr
         logger.error(
             "Aborting removal of unpacked tar ball directory, '{}'", tb_incoming_dir
         )
-        return ActionSet(actions_taken, errors, start, pbench._time())
+        return ActionSet(actions_taken, errors, start, pbench.server._time())
 
     # Fetch user from metadata.log file.
     user_name = fetch_username(tb_incoming_dir)
@@ -198,7 +196,7 @@ def remove_unpacked(tb_incoming_dir, controller_name, results, users, logger, dr
             logger.error(
                 "Aborting removal of unpacked tar ball directory, '{}'", tb_incoming_dir
             )
-            return ActionSet(actions_taken, errors, start, pbench._time())
+            return ActionSet(actions_taken, errors, start, pbench.server._time())
 
     # Now that all RESULTS symbolic links and any USERS symbolic links to the
     # incoming directory have been removed, we can rename the directory (so it
@@ -239,7 +237,7 @@ def remove_unpacked(tb_incoming_dir, controller_name, results, users, logger, dr
         else:
             act.set_status("succ")
 
-    end = pbench._time()
+    end = pbench.server._time()
     act_set = ActionSet(actions_taken, errors, start, end)
     if errors == 0:
         duration = 0.0 if end < start else end - start
@@ -327,7 +325,7 @@ def main(options):
         return 1
 
     try:
-        config = PbenchConfig(options.cfg_name)
+        config = PbenchServerConfig(options.cfg_name)
     except BadConfig as e:
         print(f"{_NAME_}: {e}", file=sys.stderr)
         return 2
@@ -418,7 +416,7 @@ def main(options):
 
     actions_taken = []
     errors = 0
-    start = pbench._time()
+    start = pbench.server._time()
     for tb_incoming_dir, controller_name in gen_list_unpacked_aged(
         incoming_p, archive_p, curr_dt, max_unpacked_age
     ):
@@ -438,7 +436,7 @@ def main(options):
             # Stop any further unpacked tar ball removal if an error is
             # encountered.
             break
-    end = pbench._time()
+    end = pbench.server._time()
 
     # Generate the ${TOP}/public_html prefix so we can strip it from the
     # various targets in the report.
