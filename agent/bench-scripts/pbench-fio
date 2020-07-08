@@ -15,7 +15,7 @@ benchmark_rpm=${benchmark}
 export benchmark_run_dir=""
 # allow unit tests to override
 if [[ -z "$benchmark_bin" ]]; then
-	benchmark_bin=/usr/local/bin/$benchmark
+	benchmark_bin="which --skip-alias --skip-functions $benchmark"
 fi
 ver="$(pbench-config version fio)"
 if [[ -z "${ver}" ]]; then

@@ -22,7 +22,9 @@ pbench_bin="`cd ${script_path}/..; /bin/pwd`"
 
 benchmark_rpm=$script_name
 benchmark="iozone"
-benchmark_bin=/usr/local/bin/$benchmark
+if [[ -z "$benchmark_bin" ]]; then
+    benchmark_bin="which --skip-alias --skip-functions $benchmark"
+fi
 ver=3.430
 
 # Every bench-script follows a similar sequence:

@@ -21,7 +21,7 @@ pbench_bin="`cd ${script_path}/..; /bin/pwd`"
 benchmark_rpm=$script_name
 benchmark="dbench"
 if [[ -z "$benchmark_bin" ]]; then
-	benchmark_bin=/usr/local/bin/$benchmark
+	benchmark_bin="which --skip-alias --skip-functions $benchmark"
 fi
 ver=4.00
 

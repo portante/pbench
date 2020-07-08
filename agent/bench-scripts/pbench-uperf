@@ -27,7 +27,7 @@ pbench_bin="`cd ${script_path}/..; /bin/pwd`"
 benchmark="uperf"
 benchmark_rpm=${benchmark}
 if [[ -z "$benchmark_bin" ]]; then
-    benchmark_bin=/usr/bin/$benchmark
+    benchmark_bin="which --skip-alias --skip-functions $benchmark"
 fi
 ver="$(pbench-config version uperf)"
 if [[ -z "${ver}" ]]; then

@@ -36,7 +36,9 @@ pbench_bin="`cd ${script_path}/..; /bin/pwd`"
 
 benchmark_rpm=$script_name
 benchmark="netperf"
-benchmark_bin=/usr/bin/$benchmark
+if [[ -z "$benchmark_bin" ]]; then
+    benchmark_bin="which --skip-alias --skip-functions $benchmark"
+fi
 ver=2.7.0
 spacing=25
 
