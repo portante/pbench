@@ -67,6 +67,64 @@ class ToolException(Exception):
     pass
 
 
+class PermaTool:
+    def __init__(self, name, tool_opts, logger):
+        self.name = name
+        self.tool_opts = tool_opts.split(" ")
+        self.logger = logger
+        self.install_path = None
+        for opt in self.tool_opts:
+            if opt.startswith("--inst="):
+                if opt[len(opt) - 1] == "\n":
+                    self.install_path = opt[7 : len(opt) - 1]
+                else:
+                    self.install_path = opt[7:]
+                self.logger.debug("FOUND")
+            else:
+                self.logger.debug("NOT FOUND SOMEHOW")
+        self.process = None
+        self.failure = False
+
+    def start(self):
+        if self.install_path is None:
+            self.failure = True
+            self.logger.error(
+                "NO INSTALL PATH PROPERLY GIVEN AS PERMATOOL OPTION, see /opt/pbench-agent/nodexporter --help"
+            )
+            return
+
+        if self.name == "node-exporter":
+            self.logger.debug(self.install_path)
+            # args = ["/usr/bin/screen", "-dmS", "node-exp-screen", self.install_path + "/node_exporter"]
+
+            if not os.path.isfile(self.install_path + "/node_exporter"):
+                self.logger.info(
+                    self.install_path + "/node_exporter" + " does not exist"
+                )
+                self.failure = True
+                return 0
+
+            args = [self.install_path + "/node_exporter"]
+            self.process = subprocess.Popen(
+                args, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
+            )
+        else:
+            self.logger.error("INVALID PERMA TOOL NAME")
+            self.failure = True
+            return 0
+
+        return 1
+
+    def stop(self):
+        if not self.failure:
+            self.process.terminate()
+            self.process.wait()
+            return 1
+
+        self.logger.error("Nothing to terminate")
+        return 0
+
+
 class Tool(object):
     """Encapsulates all the state needed to manage a tool running as a background
     process.
@@ -327,6 +385,7 @@ class ToolMeister(object):
 
     def __init__(self, pbench_bin, params, redis_server, logger):
         self.logger = logger
+        self.prom_tools = ["node-exporter"]
         self.pbench_bin = pbench_bin
         ret_val = self.fetch_params(params)
         (
@@ -338,6 +397,7 @@ class ToolMeister(object):
             self._tools,
         ) = ret_val
         self._running_tools = dict()
+        self._perma_tools = dict()
         self._rs = redis_server
         logger.debug("pubsub")
         self._pubsub = self._rs.pubsub()
@@ -371,13 +431,18 @@ class ToolMeister(object):
         assert resp["data"] == 1, f"Unexpected 'data': {resp!r}"
         logger.debug("next done")
         # First state we are expecting
-        self.state = "start"
+        self.state = "init"
+        self.state_alternate = None
         self._state_trans = {
+            "init": {"next": "start", "action": self.begin_tools},
             "start": {"next": "stop", "action": self.start_tools},
             "stop": {"next": "send", "action": self.stop_tools},
             "send": {"next": "start", "action": self.send_tools},
+            "end": {"next": "terminate", "action": self.end_tools},
         }
-        self._valid_states = frozenset(["start", "stop", "send", "terminate"])
+        self._valid_states = frozenset(
+            ["init", "start", "stop", "end", "send", "terminate"]
+        )
         for key in self._state_trans.keys():
             assert (
                 key in self._valid_states
@@ -476,15 +541,29 @@ class ToolMeister(object):
         """
         self.logger.debug("%s: wait_for_command %s", self._hostname, self.state)
         data = self._get_data()
-        while data["state"] != self.state:
+
+        # maybe switch to single terminate if here
+
+        while data["state"] != self.state and (
+            self.state_alternate is None or data["state"] != self.state_alternate
+        ):
             if data["state"] == "terminate":
                 raise Terminate()
             self.logger.info(
                 "ignoring unexpected data, %r, expecting state %s", data, self.state
             )
             data = self._get_data()
+
+        if data["state"] == "terminate":
+            raise Terminate()
+
+        self.state = data["state"]
         state_rec = self._state_trans[self.state]
         action = state_rec["action"]
+        if self.state == "send":
+            self.state_alternate = "end"
+        else:
+            self.state_alternate = None
         self.state = state_rec["next"]
         self.logger.debug("%s: msg - %r", self._hostname, data)
         return action, data
@@ -517,6 +596,28 @@ class ToolMeister(object):
                 self.logger.debug("posted client status, %r", status)
                 ret_val = 0
         return ret_val
+
+    def begin_tools(self, data):
+
+        failures = 0
+        for name, tool_opts in self._tools.items():
+            if name not in self.prom_tools:
+                continue
+            try:
+                perma_tool = PermaTool(name, tool_opts, self.logger)
+                perma_tool.start()
+
+                self.logger.debug("NAME: " + name + "  TOOL OPTS: " + tool_opts)
+            except Exception:
+                self.logger.exception(
+                    "Failed to init prom-tool %s running in background", name
+                )
+                failures += 1
+                continue
+            else:
+                self._perma_tools[name] = perma_tool
+        self._send_client_status("success")
+        return failures
 
     def start_tools(self, data):
         """start_tools - start all registered tools executing in the background
@@ -571,6 +672,8 @@ class ToolMeister(object):
         failures = 0
         tool_cnt = 0
         for name, tool_opts in sorted(self._tools.items()):
+            if name in self.prom_tools:
+                continue
             tool_cnt += 1
             try:
                 tool = Tool(
@@ -598,11 +701,13 @@ class ToolMeister(object):
     def _wait_for_tools(self):
         failures = 0
         for name in sorted(self._tools.keys()):
+            if name in self.prom_tools:
+                continue
             try:
                 tool = self._running_tools[name]
             except KeyError:
                 self.logger.error(
-                    "INTERNAL ERROR - tool %s not found in list of running tools", name,
+                    "INTERNAL ERROR - tool %s not found in list of running tools", name
                 )
                 failures += 1
                 continue
@@ -637,12 +742,13 @@ class ToolMeister(object):
 
         failures = 0
         for name in sorted(self._tools.keys()):
+            if name in self.prom_tools:
+                continue
             try:
                 tool = self._running_tools[name]
             except KeyError:
                 self.logger.error(
-                    "INTERNAL ERROR - tool %s not found in list of running" " tools",
-                    name,
+                    "INTERNAL ERROR - tool %s not found in list of running tools", name
                 )
                 failures += 1
                 continue
@@ -683,12 +789,13 @@ class ToolMeister(object):
 
         failures = 0
         for name in sorted(self._tools.keys()):
+            if name in self.prom_tools:
+                continue
             try:
                 tool = self._running_tools[name]
             except KeyError:
                 self.logger.error(
-                    "INTERNAL ERROR - tool %s not found in list of running" " tools",
-                    name,
+                    "INTERNAL ERROR - tool %s not found in list of running tools", name
                 )
                 failures += 1
                 continue
@@ -699,12 +806,13 @@ class ToolMeister(object):
                 failures += 1
         failures += self._wait_for_tools()
         for name in sorted(self._tools.keys()):
+            if name in self.prom_tools:
+                continue
             try:
                 del self._running_tools[name]
             except KeyError:
                 self.logger.error(
-                    "INTERNAL ERROR - tool %s not found in list of running" " tools",
-                    name,
+                    "INTERNAL ERROR - tool %s not found in list of running tools", name
                 )
                 failures += 1
                 continue
@@ -830,6 +938,33 @@ class ToolMeister(object):
 
         self._send_client_status(
             "success" if failures == 0 else "failures sending tool data"
+        )
+        return failures
+
+    def end_tools(self, data):
+        failures = 0
+        for name in self._tools.keys():
+            if name not in self.prom_tools:
+                continue
+            try:
+                perma_tool = self._perma_tools[name]
+            except KeyError:
+                self.logger.error(
+                    "INTERNAL ERROR - tool %s not found in list of persistent tools",
+                    name,
+                )
+                failures += 1
+                continue
+            try:
+                perma_tool.stop()
+            except Exception:
+                self.logger.exception(
+                    "Failed to stop persistent tool %s running in background", name
+                )
+                failures += 1
+        # failures += self._wait_for_tools()
+        self._send_client_status(
+            "success" if failures == 0 else "failures stopping tools"
         )
         return failures
 
