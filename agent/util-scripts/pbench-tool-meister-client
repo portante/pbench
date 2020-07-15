@@ -23,7 +23,7 @@ redis_port = 17001
 channel = "tool-meister-chan"
 
 # List of valid operations
-operations = ("start", "stop", "send", "postprocess", "kill")
+operations = ("init", "start", "stop", "end", "send", "postprocess", "kill")
 
 
 def main(argv):
