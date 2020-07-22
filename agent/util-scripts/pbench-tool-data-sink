@@ -31,6 +31,7 @@ from threading import Thread, Lock, Condition
 from http import HTTPStatus
 from wsgiref.simple_server import WSGIRequestHandler, make_server
 from bottle import Bottle, ServerAdapter, request, abort
+from pcpint.pcplogger import PCPRedis
 
 
 <<<<<<< HEAD
@@ -454,9 +455,20 @@ class ToolDataSink(Bottle):
 =======
             elif self.state == "start":
                 self._change_tm_tracking("yes", "dormant")
+            elif self.state == "init":
+                self._change_tm_tracking(None, "yes")
             else:
                 assert self.state == "stop", f"Unexpected state, '{self.state}'"
                 # Nothing to do, no data movement for "stop"
+        
+        if self.state == "init":
+            self.pcplog = PCPRedis(["list_of_hosts"],[["list_of_tools"]])
+        
+        if self.state == "start":
+            self.pcplog.start_logging()
+        
+        if self.state == "stop":
+            self.pcplog.stop_logging()
 
         if self.state == "send":
             # The Tool Data Sink cannot send success until all the Tool
