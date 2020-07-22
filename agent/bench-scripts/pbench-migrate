@@ -361,16 +361,6 @@ fi
 
 pbench-metadata-log --group=$tool_group --dir=$benchmark_run_dir beg
 
-function interrupt() {
-	# On abnormal exit, stop the tool meister ...
-	pbench-tool-meister-stop
-	if [[ ${?} != 0 ]]; then
-		error_log "[${script_name}]: failed to stop the tool meisters on interrupt."
-	fi
-	# ... and make sure that the metadata log exists and is complete.
-	pbench-metadata-log --group=$tool_group --dir=${benchmark_run_dir} int
-	return 0
-}
 trap "interrupt" INT QUIT TERM
 
 count=1

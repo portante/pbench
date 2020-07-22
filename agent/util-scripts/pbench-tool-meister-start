@@ -6,20 +6,21 @@
 Responsible for:
 
    1. Starting a redis server
-   2. Loading up the tool group data for the target group into the redis server
+   2. Loading tool group data for the given tool group into the redis server
    3. Starting the tool-data-sink process
    4. Starting all the local and remote tool meisters
 
-When complete we leave running locally, a redis server and a tool data sink
+When complete we leave running, locally, a redis server and a tool data sink
 process, and any local or remote tool meisters.
 
-The pbench-tool-meister-stop will take care of (gracefully) stopping all of
-these process, locally or remotely.
+The pbench-tool-meister-stop script will take care of (gracefully) stopping
+all of these processes, locally or remotely.
 """
 
 import sys
 import json
 import os
+import signal
 import time
 import errno
 import redis
@@ -45,6 +46,9 @@ port {redis_port:d}
 
 # FIXME: this should be moved to a shared area
 channel = "tool-meister-chan"
+
+# Maximum time to wait for the Redis server to respond.
+REDIS_MAX_WAIT = 60
 
 
 class ToolGroup(object):
@@ -117,13 +121,20 @@ class ToolGroup(object):
         """
         tools = dict()
         for tool, opts in self.toolnames.items():
-            tools[tool] = opts[host]
+            try:
+                host_opts = opts[host]
+            except KeyError:
+                # This host does not have this tool registered, ignore.
+                pass
+            else:
+                tools[tool] = host_opts
         return tools
 
 
-def wait_for_subs(redis_server, chan, expected_tms, logger):
-    """Wait for the data sink and the proper number of TMs to register, and
-    when they are all registered, then record them in the "tm-pids" key.
+def wait_for_subs(chan, expected_tms, logger):
+    """wait_for_subs - Wait for the data sink and the proper number of TMs to
+    register, and when they are all registered, return a dictionary of the
+    data sink and tool meister(s) pids.
     """
     pids = dict()
     have_ds = False
@@ -153,7 +164,7 @@ def wait_for_subs(redis_server, chan, expected_tms, logger):
                 kind=data["kind"], hostname=data["hostname"], pid=data["pid"]
             )
         except KeyError:
-            logger.warning("unrecognized data payload in message," " '%r'", data)
+            logger.warning("unrecognized data payload in message, '%r'", data)
             continue
         else:
             if new_data["kind"] == "ds":
@@ -169,8 +180,45 @@ def wait_for_subs(redis_server, chan, expected_tms, logger):
                 continue
         if have_ds and num_tms == expected_tms:
             break
-    # Record our collected pids.
-    redis_server.set("tm-pids", json.dumps(pids))
+    return pids
+
+
+def kill_redis_server(pid_file):
+    """kill_redis_server - given a redis server PID file, attempt to KILL the
+    Redis server.
+
+    Returns "1" if successfully KILL'd; "2" if it encounters an error reading
+    the PID file; "3" if bad PID value; "4" if the Redis server PID does not
+    exist; "5" if some kind of OSError is encountered; and "6" if some other
+    exception was encountered while KILL'ing it.
+    """
+    try:
+        with pid_file.open("r") as fp:
+            raw_pid = fp.read()
+    except Exception:
+        # No "pid" to kill
+        return 2
+    else:
+        try:
+            pid = int(raw_pid)
+        except Exception:
+            # Bad pid value
+            return 3
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError as exc:
+            if exc.errno == errno.ESRCH:
+                # PID not found, ignore
+                return 4
+            else:
+                # Some error encountered trying to KILL the process.
+                return 5
+        except Exception:
+            # Some other error encountered trying to KILL the process.
+            return 6
+        else:
+            # "successfully" KILL'd the give process.
+            return 1
 
 
 def main(argv):
@@ -216,7 +264,7 @@ def main(argv):
             os.mkdir(tm_dir)
             os.chdir(tm_dir)
         except Exception:
-            logger.exception("failed to create the local tool meister" " directory")
+            logger.exception("failed to create the local tool meister directory")
             return 1
     if not full_hostname or not hostname:
         logger.error(
@@ -225,6 +273,7 @@ def main(argv):
             hostname,
             full_hostname,
         )
+        return 1
     if os.environ.get("_PBENCH_UNIT_TESTS"):
         # FIXME: this is an artifact of the unit test environment.
         hostnames = "localhost"
@@ -237,6 +286,7 @@ def main(argv):
 
     # Create the Redis Server pbench-specific configuration file
     redis_conf = tm_dir / "redis.conf"
+    redis_pid = tm_dir / f"redis_{redis_port:d}.pid"
     try:
         with redis_conf.open("w") as fp:
             fp.write(redis_conf_tmpl.format(**params))
@@ -246,7 +296,7 @@ def main(argv):
     # Start the Redis Server itself
     #   - FIXME: use podman to start a redis server container
     redis_srvr = "redis-server"
-    redis_srvr_path = Path(os.path.sep, "usr", "bin", redis_srvr)
+    redis_srvr_path = find_executable(redis_srvr)
     logger.debug("starting redis server")
     try:
         retcode = os.spawnl(os.P_WAIT, redis_srvr_path, redis_srvr, redis_conf)
@@ -256,18 +306,18 @@ def main(argv):
     else:
         if retcode != 0:
             logger.error(
-                "failed to create redis server, daemonized; return" " code: %d", retcode
+                "failed to create redis server, daemonized; return code: %d", retcode
             )
             return 1
 
     try:
-        timeout = time.time() + 60
+        timeout = time.time() + REDIS_MAX_WAIT
         started_channel = "{}-start".format(channel)
         redis_connection_state = "connecting"
+        redis_server = redis.Redis(host="localhost", port=redis_port, db=0)
+        pubsub = redis_server.pubsub()
         while redis_connection_state == "connecting":
             try:
-                redis_server = redis.Redis(host="localhost", port=redis_port, db=0)
-                pubsub = redis_server.pubsub()
                 pubsub.subscribe(started_channel)
                 chan = pubsub.listen()
                 # Pull off first message which is an acknowledgement we have
@@ -276,13 +326,14 @@ def main(argv):
             except redis.exceptions.ConnectionError:
                 if time.time() > timeout:
                     raise
+                time.sleep(0.1)
             else:
                 redis_connection_state = "connected"
     except Exception as exc:
         logger.error(
             "Unable to connect to redis server, %s:%d: %r", "localhost", redis_port, exc
         )
-        return 1
+        return kill_redis_server(redis_pid)
     else:
         assert resp["type"] == "subscribe", f"bad type: f{resp!r}"
         assert resp["pattern"] is None, f"bad pattern: {resp!r}"
@@ -297,13 +348,12 @@ def main(argv):
     tds_param_key = "tds-{}".format(group)
     tds = dict(channel=channel, benchmark_run_dir=benchmark_run_dir)
     try:
-        redis_server.set(tds_param_key, json.dumps(tds))
+        redis_server.set(tds_param_key, json.dumps(tds, sort_keys=True))
     except Exception:
         logger.exception(
-            "failed to create tool-data-sink parameter key in" " redis server"
+            "failed to create tool data sink parameter key in redis server"
         )
-        # FIXME: fetch redis-server PID file and kill it.
-        return 1
+        return kill_redis_server(redis_pid)
     data_sink = "pbench-tool-data-sink"
     data_sink_path = _prog_dir / data_sink
     logger.debug("starting tool data sink")
@@ -318,14 +368,14 @@ def main(argv):
         )
     except Exception:
         logger.exception("failed to create pbench data sink, daemonized")
-        return 1
+        return kill_redis_server(redis_pid)
     else:
         if retcode != 0:
             logger.error(
-                "failed to create pbench data sink, daemonized;" " return code: %d",
+                "failed to create pbench data sink, daemonized; return code: %d",
                 retcode,
             )
-            return 1
+            return kill_redis_server(redis_pid)
 
     # 4. Start all the local and remote tool meister processes
     #   - leave a PID file on each local/remote host
@@ -335,8 +385,8 @@ def main(argv):
     successes = 0
     tool_meister_cmd = "pbench-tool-meister"
     tool_meister_cmd_path = _prog_dir / tool_meister_cmd
-    ssh_path = find_executable("ssh")
     ssh_cmd = "ssh"
+    ssh_path = find_executable(ssh_cmd)
     args = [
         ssh_cmd,
         "<host replace me>",
@@ -364,15 +414,14 @@ def main(argv):
         )
         tm_param_key = "tm-{}-{}".format(group, host)
         try:
-            redis_server.set(tm_param_key, json.dumps(tm))
+            redis_server.set(tm_param_key, json.dumps(tm, sort_keys=True))
         except Exception:
             logger.exception(
-                "failed to create tool-data-sink parameter key" " in redis server"
+                "failed to create tool meister parameter key in redis server"
             )
-            # FIXME: fetch redis-server PID file and kill it.
-            return 1
+            return kill_redis_server(redis_pid)
         if host == full_hostname:
-            logger.debug("starting locolhost tool meister")
+            logger.debug("starting localhost tool meister")
             try:
                 retcode = os.spawnl(
                     os.P_WAIT,
@@ -383,49 +432,54 @@ def main(argv):
                     tm_param_key,
                 )
             except Exception:
-                logger.exception("failed to create pbench tool meister," " daemonized")
+                logger.exception("failed to create localhost tool meister, daemonized")
                 failures += 1
             else:
                 if retcode == 0:
                     successes += 1
                 else:
                     logger.error(
-                        "failed to create pbench tool meister,"
+                        "failed to create localhost tool meister,"
                         " daemonized; return code: %d",
                         retcode,
                     )
                     failures += 1
-
             continue
         args[1] = host
         args[5] = tm_param_key
         logger.debug(
             "starting remote tool meister, ssh_path=%r args=%r", ssh_path, args
         )
-        # FIXME: here we should consider using Ansible instead
+        # FIXME: should we consider using Ansible instead?
         try:
             pid = os.spawnv(os.P_NOWAIT, ssh_path, args)
         except Exception:
             logger.exception(
-                "failed to create a tool meister instance for" " host %s", host
+                "failed to create a tool meister instance for host %s", host
             )
             failures += 1
         else:
             ssh_pids.append((pid, host))
             successes += 1
+
+    if failures > 0:
+        return kill_redis_server(redis_pid)
+
     # Wait for all the SSH pids to complete.
     for pid, host in ssh_pids:
         try:
             exit_pid, _exit_status = os.waitpid(pid, 0)
         except OSError:
-            logger.exception(
-                "failed to create a tool meister instance for" " host %s", host
-            )
             failures += 1
             successes -= 1
+            logger.exception(
+                "failed to create a tool meister instance for host %s", host
+            )
         else:
             exit_status = os.WEXITSTATUS(_exit_status)
             if pid != exit_pid:
+                failures += 1
+                successes -= 1
                 logger.error(
                     "INTERNAL ERROR: os.waitpid(%d, 0) returned (%d, %d [%0X])",
                     pid,
@@ -438,7 +492,7 @@ def main(argv):
                     failures += 1
                     successes -= 1
                     logger.error(
-                        "failed to start tool-meister on remote host '%s'"
+                        "failed to start tool meister on remote host '%s'"
                         " (pid %d), exit status: %d [%0X]",
                         host,
                         pid,
@@ -446,24 +500,41 @@ def main(argv):
                         _exit_status,
                     )
 
-    # If any successes, then we need to wait for them to show up as
-    # subscribers.
-    logger.debug("waiting for subs")
-    wait_for_subs(redis_server, chan, successes, logger)
-
-    # For any failures, just terminate early.
     if failures > 0:
-        logger.info("terminating localhost:%d due to failures", redis_port)
+        logger.info("terminating tool meister startup due to failures")
         terminate_msg = dict(state="terminate", group=group, directory=None)
         try:
-            ret = redis_server.publish(channel, json.dumps(terminate_msg))
+            ret = redis_server.publish(
+                channel, json.dumps(terminate_msg, sort_keys=True)
+            )
         except Exception:
             logger.exception("Failed to publish terminate message")
         else:
             logger.debug("publish() = %r", ret)
-        # FIXME: kill redis server PID
-
-    return 1 if failures > 0 else 0
+        ret_val = kill_redis_server(redis_pid)
+    elif successes > 0:
+        # If any successes, then we need to wait for them to show up as
+        # subscribers.
+        logger.debug(
+            "waiting for all successfully spawned SSH processes"
+            " to show up as subscribers"
+        )
+        pids = wait_for_subs(chan, successes, logger)
+        # Record our collected pids.
+        try:
+            redis_server.set("tm-pids", json.dumps(pids, sort_keys=True))
+        except Exception:
+            logger.exception("failed to set tool meister pids object")
+            ret_val = kill_redis_server(redis_pid)
+        else:
+            ret_val = 0
+    else:
+        logger.warning(
+            "unable to successfully start any tool meisters,"
+            " but encountered no failures either: terminating"
+        )
+        ret_val = kill_redis_server(redis_pid)
+    return ret_val
 
 
 if __name__ == "__main__":

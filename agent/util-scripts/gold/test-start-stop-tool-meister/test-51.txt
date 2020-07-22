@@ -2,10 +2,10 @@
 "mpstat" tool is now registered for host "testhost.example.com" in group "default"
 starting redis server
 starting tool data sink
-starting locolhost tool meister
-waiting for subs
-channel payload, "'{"kind": "ds", "hostname": "testhost.example.com", "pid": NNNNN}'"
-channel payload, "'{"kind": "tm", "hostname": "testhost.example.com", "pid": NNNNN}'"
+starting localhost tool meister
+waiting for all successfully spawned SSH processes to show up as subscribers
+channel payload, "'{"hostname": "testhost.example.com", "kind": "ds", "pid": NNNNN}'"
+channel payload, "'{"hostname": "testhost.example.com", "kind": "tm", "pid": NNNNN}'"
 --- Finished test-51 test-start-stop-tool-meister (status=0)
 +++ pbench tree state
 /var/tmp/pbench-test-utils/pbench
@@ -35,7 +35,7 @@ Hit Ctrl-C to quit.
 
 --- mock-run/tm/pbench-tool-data-sink.err file contents
 +++ mock-run/tm/pbench-tool-data-sink.log file contents
-INFO pbench-tool-data-sink main -- params_key (tds-default): b'{"channel": "tool-meister-chan", "benchmark_run_dir": "/var/tmp/pbench-test-utils/pbench/mock-run"}'
+INFO pbench-tool-data-sink main -- params_key (tds-default): b'{"benchmark_run_dir": "/var/tmp/pbench-test-utils/pbench/mock-run", "channel": "tool-meister-chan"}'
 INFO pbench-tool-data-sink run -- Running Bottle web server ...
 INFO pbench-tool-data-sink execute -- Terminate bottle server
 INFO pbench-tool-data-sink run -- Bottle web server exited

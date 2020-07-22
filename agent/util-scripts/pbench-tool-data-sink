@@ -147,7 +147,9 @@ class ToolDataSink(Bottle):
         # Tell the entity that started us who we are indicating we're ready.
         started_msg = dict(kind="ds", hostname=self._hostname, pid=os.getpid())
         logger.debug("publish *-start")
-        redis_server.publish(f"{channel}-start", json.dumps(started_msg))
+        redis_server.publish(
+            f"{channel}-start", json.dumps(started_msg, sort_keys=True)
+        )
         logger.debug("published *-start")
         self.web_server_thread = None
 
@@ -406,7 +408,7 @@ class ToolDataSink(Bottle):
         self.logger.debug("publish tmc")
         try:
             num_present = self.redis_server.publish(
-                "tool-meister-client", json.dumps(msg)
+                "tool-meister-client", json.dumps(msg, sort_keys=True)
             )
         except Exception:
             self.logger.exception("Failed to publish client status message")
