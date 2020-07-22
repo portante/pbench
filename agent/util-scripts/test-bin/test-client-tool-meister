@@ -26,6 +26,7 @@ fi
 
 function register {
 <<<<<<< HEAD
+<<<<<<< HEAD
     if [[ -z "${2}" ]]; then
         local remote_arg=""
     else
@@ -37,20 +38,28 @@ function register {
         printf -- "ERROR - \"pbench-register-tool --group %s --name %s\" failed to execute successfully (exit code: %s)\n" "${group}" "${1}${remote_arg}" "${status}" >&2
 =======
     if [[ -z "${1}" ]]; then
+=======
+    if [[ -z "${2}" ]]; then
+>>>>>>> Apply changes based on today's code-review
         local remote_arg=""
     else
-        local remote_arg=" --remote ${1}"
+        local remote_arg=" --remote ${2}"
     fi
-    pbench-register-tool --group "${group}" --name mpstat${remote_arg}
+    pbench-register-tool --group "${group}" --name ${1}${remote_arg}
     status=${?}
     if [[ ${status} -ne 0 ]]; then
+<<<<<<< HEAD
         printf -- "\"pbench-register-tool --group ${group} --name mpstat${remote_arg}\" failed to execute successfully (exit code: ${status})\n"
 >>>>>>> First pass implementation of the "Tool Meister"
+=======
+        printf -- "\"pbench-register-tool --group ${group} --name ${1}${remote_arg}\" failed to execute successfully (exit code: ${status})\n"
+>>>>>>> Apply changes based on today's code-review
         exit 1
     fi
 }
 
 # Always register a local tool
+<<<<<<< HEAD
 <<<<<<< HEAD
 register mpstat
 register iostat
@@ -67,6 +76,15 @@ if [[ "${2}" == "with-remotes" ]]; then
     register remote_b.example.com
     register remote_c.example.com
 >>>>>>> First pass implementation of the "Tool Meister"
+=======
+register mpstat
+register iostat
+
+if [[ "${2}" == "with-remotes" ]]; then
+    register mpstat remote_a.example.com
+    register mpstat remote_b.example.com
+    register mpstat remote_c.example.com
+>>>>>>> Apply changes based on today's code-review
 fi
 
 # We created the benchmark_run_dir directory as the tool meister expects it to

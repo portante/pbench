@@ -1,9 +1,13 @@
 +++ Running test-56 test-client-tool-meister lite with-remotes
 "mpstat" tool is now registered for host "testhost.example.com" in group "lite"
 <<<<<<< HEAD
+<<<<<<< HEAD
 "iostat" tool is now registered for host "testhost.example.com" in group "lite"
 =======
 >>>>>>> First pass implementation of the "Tool Meister"
+=======
+"iostat" tool is now registered for host "testhost.example.com" in group "lite"
+>>>>>>> Apply changes based on today's code-review
 "mpstat" tool is now registered for host "remote_a.example.com" in group "lite"
 "mpstat" tool is now registered for host "remote_b.example.com" in group "lite"
 "mpstat" tool is now registered for host "remote_c.example.com" in group "lite"
@@ -58,6 +62,9 @@
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/remote_c.example.com/tm-mpstat-stop.out
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> Apply changes based on today's code-review
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/iostat
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/iostat/csv
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/iostat/iostat-postprocess.err
@@ -65,8 +72,11 @@
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/iostat/iostat-stderr.txt
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/iostat/iostat-stdout.txt
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/iostat/iostat.cmd
+<<<<<<< HEAD
 =======
 >>>>>>> First pass implementation of the "Tool Meister"
+=======
+>>>>>>> Apply changes based on today's code-review
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/mpstat
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/mpstat/mpstat-postprocess.err
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/mpstat/mpstat-postprocess.out
@@ -77,12 +87,18 @@
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/mpstat/mpstat.cmd
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/mpstat/online-cpus.txt
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> Apply changes based on today's code-review
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/tm-iostat-postprocess.err
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/tm-iostat-postprocess.out
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/tm-iostat-stop.err
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/tm-iostat-stop.out
+<<<<<<< HEAD
 =======
 >>>>>>> First pass implementation of the "Tool Meister"
+=======
+>>>>>>> Apply changes based on today's code-review
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/tm-mpstat-postprocess.err
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/tm-mpstat-postprocess.out
 /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com/tm-mpstat-stop.err
@@ -134,6 +150,9 @@
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/remote_c.example.com/tm-mpstat-stop.out
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> Apply changes based on today's code-review
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/iostat
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/iostat/csv
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/iostat/iostat-postprocess.err
@@ -141,8 +160,11 @@
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/iostat/iostat-stderr.txt
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/iostat/iostat-stdout.txt
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/iostat/iostat.cmd
+<<<<<<< HEAD
 =======
 >>>>>>> First pass implementation of the "Tool Meister"
+=======
+>>>>>>> Apply changes based on today's code-review
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/mpstat
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/mpstat/mpstat-postprocess.err
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/mpstat/mpstat-postprocess.out
@@ -153,12 +175,18 @@
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/mpstat/mpstat.cmd
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/mpstat/online-cpus.txt
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> Apply changes based on today's code-review
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/tm-iostat-postprocess.err
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/tm-iostat-postprocess.out
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/tm-iostat-stop.err
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/tm-iostat-stop.out
+<<<<<<< HEAD
 =======
 >>>>>>> First pass implementation of the "Tool Meister"
+=======
+>>>>>>> Apply changes based on today's code-review
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/tm-mpstat-postprocess.err
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/tm-mpstat-postprocess.out
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com/tm-mpstat-stop.err
@@ -184,17 +212,25 @@
 /var/tmp/pbench-test-utils/pbench/tools-v1-lite/remote_c.example.com/mpstat
 /var/tmp/pbench-test-utils/pbench/tools-v1-lite/testhost.example.com
 <<<<<<< HEAD
+<<<<<<< HEAD
 /var/tmp/pbench-test-utils/pbench/tools-v1-lite/testhost.example.com/iostat
 =======
 >>>>>>> First pass implementation of the "Tool Meister"
+=======
+/var/tmp/pbench-test-utils/pbench/tools-v1-lite/testhost.example.com/iostat
+>>>>>>> Apply changes based on today's code-review
 /var/tmp/pbench-test-utils/pbench/tools-v1-lite/testhost.example.com/mpstat
 === /var/tmp/pbench-test-utils/pbench/tools-v1-lite/remote_a.example.com/mpstat:
 === /var/tmp/pbench-test-utils/pbench/tools-v1-lite/remote_b.example.com/mpstat:
 === /var/tmp/pbench-test-utils/pbench/tools-v1-lite/remote_c.example.com/mpstat:
 <<<<<<< HEAD
+<<<<<<< HEAD
 === /var/tmp/pbench-test-utils/pbench/tools-v1-lite/testhost.example.com/iostat:
 =======
 >>>>>>> First pass implementation of the "Tool Meister"
+=======
+=== /var/tmp/pbench-test-utils/pbench/tools-v1-lite/testhost.example.com/iostat:
+>>>>>>> Apply changes based on today's code-review
 === /var/tmp/pbench-test-utils/pbench/tools-v1-lite/testhost.example.com/mpstat:
 --- pbench tree state
 +++ pbench.log file contents
@@ -202,10 +238,15 @@
 [info][1900-01-01T00:00:00.000000] "mpstat" tool is now registered for host "testhost.example.com" in group "lite"
 [debug][1900-01-01T00:00:00.000000] tool_opts: ""
 <<<<<<< HEAD
+<<<<<<< HEAD
 [info][1900-01-01T00:00:00.000000] "iostat" tool is now registered for host "testhost.example.com" in group "lite"
 [debug][1900-01-01T00:00:00.000000] tool_opts: ""
 =======
 >>>>>>> First pass implementation of the "Tool Meister"
+=======
+[info][1900-01-01T00:00:00.000000] "iostat" tool is now registered for host "testhost.example.com" in group "lite"
+[debug][1900-01-01T00:00:00.000000] tool_opts: ""
+>>>>>>> Apply changes based on today's code-review
 [info][1900-01-01T00:00:00.000000] "mpstat" tool is now registered for host "remote_a.example.com" in group "lite"
 [debug][1900-01-01T00:00:00.000000] tool_opts: ""
 [info][1900-01-01T00:00:00.000000] "mpstat" tool is now registered for host "remote_b.example.com" in group "lite"
@@ -347,6 +388,7 @@ INFO pbench-tool-meister main -- Remove pid file ... (tm-lite-remote_c.example.c
 --- mock-run/tm/tm-lite-remote_c.example.com.log file contents
 +++ mock-run/tm/tm-lite-testhost.example.com.log file contents
 <<<<<<< HEAD
+<<<<<<< HEAD
 INFO pbench-tool-meister main -- params_key (tm-lite-testhost.example.com): b'{"benchmark_run_dir": "/var/tmp/pbench-test-utils/pbench/mock-run", "channel": "tool-meister-chan", "controller": "testhost.example.com", "group": "lite", "hostname": "testhost.example.com", "tools": {"iostat": "", "mpstat": ""}}'
 INFO pbench-tool-meister start -- iostat: start_tool -- /usr/bin/screen -dmS pbench-tool-lite-iostat /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/iostat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com 
 INFO pbench-tool-meister start -- mpstat: start_tool -- /usr/bin/screen -dmS pbench-tool-lite-mpstat /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com 
@@ -370,18 +412,34 @@ INFO pbench-tool-meister postprocess -- mpstat: post-process_tool -- /var/tmp/pb
 INFO pbench-tool-meister wait -- waiting for post-process iostat
 =======
 INFO pbench-tool-meister main -- params_key (tm-lite-testhost.example.com): b'{"benchmark_run_dir": "/var/tmp/pbench-test-utils/pbench/mock-run", "channel": "tool-meister-chan", "controller": "testhost.example.com", "group": "lite", "hostname": "testhost.example.com", "tools": {"mpstat": ""}}'
+=======
+INFO pbench-tool-meister main -- params_key (tm-lite-testhost.example.com): b'{"benchmark_run_dir": "/var/tmp/pbench-test-utils/pbench/mock-run", "channel": "tool-meister-chan", "controller": "testhost.example.com", "group": "lite", "hostname": "testhost.example.com", "tools": {"mpstat": "", "iostat": ""}}'
+>>>>>>> Apply changes based on today's code-review
 INFO pbench-tool-meister start -- mpstat: start_tool -- /usr/bin/screen -dmS pbench-tool-lite-mpstat /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com 
+INFO pbench-tool-meister start -- iostat: start_tool -- /usr/bin/screen -dmS pbench-tool-lite-iostat /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/iostat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com 
 INFO pbench-tool-meister stop -- mpstat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --stop --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com 
+INFO pbench-tool-meister stop -- iostat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/iostat --stop --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com 
 INFO pbench-tool-meister wait -- waiting for stop mpstat
+INFO pbench-tool-meister wait -- waiting for stop iostat
 INFO pbench-tool-meister postprocess -- mpstat: post-process_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --postprocess --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com 
+INFO pbench-tool-meister postprocess -- iostat: post-process_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/iostat --postprocess --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com 
 INFO pbench-tool-meister wait -- waiting for post-process mpstat
+INFO pbench-tool-meister wait -- waiting for post-process iostat
 INFO pbench-tool-meister send_tools -- testhost.example.com: send_tools (no-op) lite /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite
 INFO pbench-tool-meister start -- mpstat: start_tool -- /usr/bin/screen -dmS pbench-tool-lite-mpstat /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com 
+INFO pbench-tool-meister start -- iostat: start_tool -- /usr/bin/screen -dmS pbench-tool-lite-iostat /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/iostat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com 
 INFO pbench-tool-meister stop -- mpstat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --stop --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com 
+INFO pbench-tool-meister stop -- iostat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/iostat --stop --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com 
 INFO pbench-tool-meister wait -- waiting for stop mpstat
+INFO pbench-tool-meister wait -- waiting for stop iostat
 INFO pbench-tool-meister postprocess -- mpstat: post-process_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --postprocess --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com 
+<<<<<<< HEAD
 >>>>>>> First pass implementation of the "Tool Meister"
+=======
+INFO pbench-tool-meister postprocess -- iostat: post-process_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/iostat --postprocess --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com 
+>>>>>>> Apply changes based on today's code-review
 INFO pbench-tool-meister wait -- waiting for post-process mpstat
+INFO pbench-tool-meister wait -- waiting for post-process iostat
 INFO pbench-tool-meister send_tools -- testhost.example.com: send_tools (no-op) lite /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite
 INFO pbench-tool-meister main -- terminating
 INFO pbench-tool-meister main -- Remove pid file ... (tm-lite-testhost.example.com.pid)
@@ -394,10 +452,15 @@ INFO pbench-tool-meister main -- Remove pid file ... (tm-lite-testhost.example.c
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/mpstat -P ALL 10
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/mpstat -P ALL 10
 <<<<<<< HEAD
+<<<<<<< HEAD
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x iostat
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x iostat
 =======
 >>>>>>> First pass implementation of the "Tool Meister"
+=======
+/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x iostat
+/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x iostat
+>>>>>>> Apply changes based on today's code-review
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x mpstat
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x mpstat
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x mpstat

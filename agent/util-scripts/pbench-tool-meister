@@ -504,16 +504,27 @@ class ToolMeister(object):
                 f" '{key}', '{self._state_trans[key]['next']}'"
             )
         self._message_keys = frozenset(["directory", "group", "state"])
+        # The current 'directory' into which the tools are collected; not set
+        # until a 'start tools' is executed, cleared when a 'send tools'
+        # completes.
+        self._directory = None
+
+        # FIXME: run all the "--install" commands for the tools to ensure
+        # they are successful before declaring that we are ready.
+
         # Tell the entity that started us who we are, indicating we're ready.
         started_msg = dict(kind="tm", hostname=self._hostname, pid=os.getpid())
         logger.debug("publish *-start")
         self._rs.publish(f"{self._channel}-start", json.dumps(started_msg))
         logger.debug("published *-start")
+<<<<<<< HEAD
 >>>>>>> First pass implementation of the "Tool Meister"
         # The current 'directory' into which the tools are collected; not set
         # until a 'start tools' is executed, cleared when a 'send tools'
         # completes.
         self._directory = None
+=======
+>>>>>>> Apply changes based on today's code-review
 
 <<<<<<< HEAD
         # FIXME: run all the "--install" commands for the tools to ensure

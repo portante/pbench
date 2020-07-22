@@ -3,6 +3,7 @@
 starting redis server
 starting tool data sink
 <<<<<<< HEAD
+<<<<<<< HEAD
 starting localhost tool meister
 waiting for all successfully spawned SSH processes to show up as subscribers
 channel payload, "'{"hostname": "testhost.example.com", "kind": "ds", "pid": NNNNN}'"
@@ -10,6 +11,10 @@ channel payload, "'{"hostname": "testhost.example.com", "kind": "tm", "pid": NNN
 =======
 starting locolhost tool meister
 waiting for subs
+=======
+starting localhost tool meister
+waiting for all successfully spawned SSH processes to show up as subscribers
+>>>>>>> Apply changes based on today's code-review
 channel payload, "'{"kind": "ds", "hostname": "testhost.example.com", "pid": NNNNN}'"
 channel payload, "'{"kind": "tm", "hostname": "testhost.example.com", "pid": NNNNN}'"
 >>>>>>> First pass implementation of the "Tool Meister"
