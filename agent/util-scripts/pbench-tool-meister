@@ -57,6 +57,10 @@ from pathlib import Path
 from pbench.server.utils import md5sum
 
 
+class ToolException(Exception):
+    pass
+
+
 class Tool(object):
     """Encapsulates all the state needed to manage a tool running as a background
     process.
@@ -79,19 +83,25 @@ class Tool(object):
         self.stop_process = None
         self.post_process = None
 
+    def _check_no_processes(self):
+        if self.start_process is not None:
+            raise ToolException(
+                f"Tool({self.name}) has an unexpected start process running"
+            )
+        if self.stop_process is not None:
+            raise ToolException(
+                f"Tool({self.name}) has an unexpected stop process running"
+            )
+        if self.post_process is not None:
+            raise ToolException(
+                f"Tool({self.name}) has an unexpected post-process process running"
+            )
+
     def start(self):
         """Creates the background `screen` process running the tool's "start"
         operation.
         """
-        if (
-            self.start_process is not None
-            or self.stop_process is not None
-            or self.post_process is not None
-        ):
-            self.logger.error(
-                "Tool(%s) has unexpected process already running", self.name
-            )
-            return
+        self._check_no_processes()
         # screen -dm -L -S \"${screen_name}\" ${pbench_bin}/tool-scripts/${name} --${action} --dir=${tool_output_dir} ${tool_opts[@]}
         args = [
             "/usr/bin/screen",
@@ -110,19 +120,15 @@ class Tool(object):
         operation.
         """
         if self.start_process is None:
-            self.logger.error("Tool(%s)'s start process not already running", self.name)
-            return
+            raise ToolException(f"Tool({self.name})'s start process not running")
         if self.stop_process is not None:
-            self.logger.error(
-                "Tool(%s) has unexpected stop process already running", self.name
+            raise ToolException(
+                f"Tool({self.name}) has an unexpected stop process running"
             )
-            return
         if self.post_process is not None:
-            self.logger.error(
-                "Tool(%s) has unexpected post-process process already" " running",
-                self.name,
+            raise ToolException(
+                f"Tool({self.name}) has an unexpected post-process process running"
             )
-            return
 
         # FIXME - before we "stop" a tool, check to see if a
         # "{tool}/{tool}.pid" file exists.  If it doesn't wait for a second to
@@ -135,7 +141,7 @@ class Tool(object):
             cnt += 1
         if not tool_pid_file.exists():
             self.logger.warning(
-                "Toll(%s) pid file, %s, does not exist after waiting 10 seconds",
+                "Tool(%s) pid file, %s, does not exist after waiting 10 seconds",
                 self.name,
                 tool_pid_file,
             )
@@ -166,15 +172,13 @@ class Tool(object):
         """
         if self.stop_process is not None:
             if self.start_process is None:
-                self.logger.error(
-                    "Tool(%s) does not have a start process running", self.name
+                raise ToolException(
+                    f"Tool({self.name}) does not have a start process running"
                 )
-                return
             if self.post_process is not None:
-                self.logger.error(
-                    "Tool(%s) has unexpected post-process process running", self.name
+                raise ToolException(
+                    f"Tool({self.name}) has an unexpected post-process process running"
                 )
-                return
             self.logger.info("waiting for stop %s", self.name)
             # We wait for the stop process to finish first ...
             self.stop_process.wait()
@@ -184,35 +188,25 @@ class Tool(object):
             self.start_process = None
         elif self.post_process is not None:
             if self.start_process is not None:
-                self.logger.error(
-                    "Tool(%s) has unexpected start process running", self.name
+                raise ToolException(
+                    f"Tool({self.name}) has an unexpected start process running"
                 )
-                return
             if self.stop_process is not None:
-                self.logger.error(
-                    "Tool(%s) has unexpected stop process running", self.name
+                raise ToolException(
+                    f"Tool({self.name}) has unexpected stop process running"
                 )
-                return
             self.logger.info("waiting for post-process %s", self.name)
             self.post_process.wait()
             self.post_process = None
         else:
-            self.logger.error(
-                "wait (%s) not called after 'stop' or 'post-process'", self.name
+            raise ToolException(
+                f"Tool({self.name}) wait not called after 'stop' or 'post-process'"
             )
 
     def postprocess(self):
-        """Run the tool's "post-process" action.
+        """Run the tool's "post-process" action in the background.
         """
-        if (
-            self.start_process is not None
-            or self.stop_process is not None
-            or self.post_process is not None
-        ):
-            self.logger.error(
-                "Tool(%s) has an unexpected process already running", self.name
-            )
-            return
+        self._check_no_processes()
         # $pbench_bin/tool-scripts/$name --postprocess --dir=$dir "${tool_opts[@]}"
         args = [
             f"{self.pbench_bin}/tool-scripts/{self.name}",
@@ -387,15 +381,21 @@ class ToolMeister(object):
                 f" '{key}', '{self._state_trans[key]['next']}'"
             )
         self._message_keys = frozenset(["directory", "group", "state"])
-        # Tell the entity that started us who we are, indicating we're ready.
-        started_msg = dict(kind="tm", hostname=self._hostname, pid=os.getpid())
-        logger.debug("publish *-start")
-        self._rs.publish(f"{self._channel}-start", json.dumps(started_msg))
-        logger.debug("published *-start")
         # The current 'directory' into which the tools are collected; not set
         # until a 'start tools' is executed, cleared when a 'send tools'
         # completes.
         self._directory = None
+
+        # FIXME: run all the "--install" commands for the tools to ensure
+        # they are successful before declaring that we are ready.
+
+        # Tell the entity that started us who we are, indicating we're ready.
+        started_msg = dict(kind="tm", hostname=self._hostname, pid=os.getpid())
+        logger.debug("publish *-start")
+        self._rs.publish(
+            f"{self._channel}-start", json.dumps(started_msg, sort_keys=True)
+        )
+        logger.debug("published *-start")
 
     def cleanup(self):
         """cleanup - close down the Redis pubsub object.
@@ -488,7 +488,9 @@ class ToolMeister(object):
         msg = dict(kind="tm", hostname=self._hostname, status=status)
         self.logger.debug("publish tmc")
         try:
-            num_present = self._rs.publish("tool-meister-client", json.dumps(msg))
+            num_present = self._rs.publish(
+                "tool-meister-client", json.dumps(msg, sort_keys=True)
+            )
         except Exception:
             self.logger.exception("Failed to publish client status message")
             ret_val = 1
@@ -555,7 +557,7 @@ class ToolMeister(object):
         # 	done < "$tool_group_dir/$this_tool_file"
         # name="$this_tool_file"
         failures = 0
-        for name, tool_opts in self._tools.items():
+        for name, tool_opts in sorted(self._tools.items()):
             try:
                 tool = Tool(
                     name, self._group, tool_opts, self.pbench_bin, _dir, self.logger
@@ -574,13 +576,12 @@ class ToolMeister(object):
 
     def _wait_for_tools(self):
         failures = 0
-        for name in self._tools.keys():
+        for name in sorted(self._tools.keys()):
             try:
                 tool = self._running_tools[name]
             except KeyError:
                 self.logger.error(
-                    "INTERNAL ERROR - tool %s not found in list of running" " tools",
-                    name,
+                    "INTERNAL ERROR - tool %s not found in list of running tools", name,
                 )
                 failures += 1
                 continue
@@ -588,7 +589,7 @@ class ToolMeister(object):
                 tool.wait()
             except Exception:
                 self.logger.exception(
-                    "Failed to wait for tool %s to stop running in" " background", name
+                    "Failed to wait for tool %s to stop running in background", name
                 )
                 failures += 1
         return failures
@@ -614,7 +615,7 @@ class ToolMeister(object):
             return False
 
         failures = 0
-        for name in self._tools.keys():
+        for name in sorted(self._tools.keys()):
             try:
                 tool = self._running_tools[name]
             except KeyError:
@@ -660,7 +661,7 @@ class ToolMeister(object):
             return False
 
         failures = 0
-        for name in self._tools.keys():
+        for name in sorted(self._tools.keys()):
             try:
                 tool = self._running_tools[name]
             except KeyError:
@@ -676,7 +677,7 @@ class ToolMeister(object):
                 self.logger.exception("Failed to post-process tool %s data", name)
                 failures += 1
         failures += self._wait_for_tools()
-        for name in self._tools.keys():
+        for name in sorted(self._tools.keys()):
             try:
                 del self._running_tools[name]
             except KeyError:

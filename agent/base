@@ -301,6 +301,17 @@ function resolve_benchmark_bin {
     which --skip-alias --skip-functions "${1}"
 }
 
+function interrupt() {
+    # On abnormal exit, stop the tool meister ...
+    pbench-tool-meister-stop
+    if [[ ${?} != 0 ]]; then
+        error_log "[${script_name}]: failed to stop the tool meisters on interrupt."
+    fi
+    # ... and make sure that the metadata log exists and is complete.
+    pbench-metadata-log --group=${tool_group} --dir=${benchmark_run_dir} int
+    return 0
+}
+
 if [[ "${_PBENCH_UNIT_TESTS}" == 1 ]] ;then
     # For unit tests, we use a mock kill:
     # disable the built-in.

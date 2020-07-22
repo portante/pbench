@@ -100,7 +100,9 @@ def main(argv):
     logger.debug("terminating %d pids at localhost:%d", expected_pids, redis_port)
     terminate_msg = dict(state="terminate", group=None, directory=None)
     try:
-        num_present = redis_server.publish(channel, json.dumps(terminate_msg))
+        num_present = redis_server.publish(
+            channel, json.dumps(terminate_msg, sort_keys=True)
+        )
     except Exception:
         logger.exception("Failed to publish terminate message")
         ret_val = 1
