@@ -1,0 +1,84 @@
+#!/usr/bin/python3
+# -*- mode: python -*-
+
+import sys
+import os
+import psutil
+import shutil
+import subprocess
+import logging
+import time
+
+PROG = os.path.basename(sys.argv[0])
+logger = logging.getLogger(PROG)
+logger.setLevel(logging.DEBUG)
+sh = logging.StreamHandler()
+sh.setLevel(logging.DEBUG)
+shf = logging.Formatter("%(message)s")
+sh.setFormatter(shf)
+logger.addHandler(sh)
+
+node_exp = None
+install_path = None
+
+if len(sys.argv) != 2 and sys.argv[1] != "--help":
+    logger.info("Incorrect number of arguments presented")
+    exit(0)
+
+if sys.argv[1] == "--help":
+    logger.info("Options:");
+    logger.info("--inst=<LOCATION OF dcgm INSTALL> (required)")
+    #logger.info("Soon to come: metric enabling/disabling")
+
+if len(sys.argv) == 2 and sys.argv[1][:7] == "--inst=":
+    #logger.debug("INSTALL PATH: " + sys.argv[3][7:])
+    install_len = len(sys.argv[1])
+
+    if sys.argv[1][install_len - 1] == '\n':
+        install_path = sys.argv[1][7:install_len - 1]
+    else:
+        install_path = sys.argv[1][7:]
+    logger.debug("INSTALL PATH: " + install_path)
+else:
+    logger.info("The required options were not passed during tool registration.")
+    logger.info("Please install and run Nvidia's DCGM and then enter the install path here.")
+    exit(0)
+
+if sys.argv[1] == "--start":
+
+    dir_elems = sys.argv[2].split("/")
+    pid_dir_base = "/".join(dir_elems[1:5])
+    pid_file = f"/{pid_dir_base}/tm/node_exp_pid.txt"
+
+    node_exp = subprocess.Popen(install_path + "/node_exporter")
+
+    args = ["less", pid_file]
+    save_pid = subprocess.Popen(args, shell=True)
+    pid_holder = open(pid_file,'w')
+    pid_holder.write(str(node_exp.pid))
+    pid_holder.close()
+
+    node_exp.wait()
+
+if sys.argv[1] == "--stop":
+
+    dir_elems = sys.argv[2].split("/")
+    pid_dir_base = "/".join(dir_elems[1:5])
+    pid_file = f"/{pid_dir_base}/tm/node_exp_pid.txt"
+
+    pid_retriever = open(pid_file, 'r')
+    pid = pid_retriever.read()
+    pid_retriever.close
+
+    args = ["rm", "-f", pid_file]
+    delete_pid_holder = subprocess.Popen(args)
+
+    process = psutil.Process(int(pid))
+    process.terminate()
+    process.wait()
+    logger.debug("Job done! PID: " + pid)
+
+if sys.argv[1] == "--postprocess":
+    logger.debug("We done here")
+
+#logger.debug(str(sys.argv))
