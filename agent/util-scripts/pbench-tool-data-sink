@@ -45,6 +45,7 @@ class PrometheusLauncher():
         self.logger = logger
         self.allowed_tools = {"node-exporter": '9100', "dcgm": '8000'}
         self.volume = str(self.benchmark_run_dir) + '/prom_vol'
+        self.abort_launch = True
 
     def launch(self):
         config = open("prometheus.yml", 'w')
@@ -64,6 +65,7 @@ class PrometheusLauncher():
 
             for tool in self.host_tools_dict[host]:
                 if tool in self.allowed_tools:
+                    self.abort_launch = False
                     port = self.allowed_tools[tool]
                     config.write("  - job_name: \'{}_{}\'\n    static_configs:\n    - targets: [\'{}:{}\']\n\n".format(host_ip, tool, host_ip, port))
 
@@ -74,6 +76,11 @@ class PrometheusLauncher():
         image.close()
 
         prom_logs = open("prom.log", 'w')
+
+        if self.abort_launch:
+            prom_logs.write("Prometheus launch aborted, no persistent tools registered")
+            prom_logs.close()
+            return 0
 
         args = ['podman', 'pull', 'prom/prometheus']
         prom_pull = subprocess.Popen(args, stdout=prom_logs, stderr=prom_logs) #, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
@@ -96,6 +103,9 @@ class PrometheusLauncher():
         return 1
 
     def terminate(self):
+        if self.abort_launch:
+            return 0
+
         self.run.terminate()
         self.run.wait()
         self.logger.debug("PROM TERMINATED")

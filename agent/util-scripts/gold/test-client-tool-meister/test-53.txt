@@ -128,7 +128,6 @@ INFO pbench-tool-meister postprocess -- iostat: post-process_tool -- /var/tmp/pb
 INFO pbench-tool-meister postprocess -- mpstat: post-process_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --postprocess --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com 
 INFO pbench-tool-meister wait -- waiting for post-process iostat
 INFO pbench-tool-meister wait -- waiting for post-process mpstat
-INFO pbench-tool-meister wait -- waiting for post-process iostat
 INFO pbench-tool-meister send_tools -- testhost.example.com: send_tools (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default
 INFO pbench-tool-meister start -- iostat: start_tool -- /usr/bin/screen -dmS pbench-tool-default-iostat /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/iostat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com 
 INFO pbench-tool-meister start -- mpstat: start_tool -- /usr/bin/screen -dmS pbench-tool-default-mpstat /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com 
@@ -140,7 +139,6 @@ INFO pbench-tool-meister postprocess -- iostat: post-process_tool -- /var/tmp/pb
 INFO pbench-tool-meister postprocess -- mpstat: post-process_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --postprocess --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com 
 INFO pbench-tool-meister wait -- waiting for post-process iostat
 INFO pbench-tool-meister wait -- waiting for post-process mpstat
-INFO pbench-tool-meister wait -- waiting for post-process iostat
 INFO pbench-tool-meister send_tools -- testhost.example.com: send_tools (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default
 INFO pbench-tool-meister main -- terminating
 INFO pbench-tool-meister main -- Remove pid file ... (tm-default-testhost.example.com.pid)
@@ -150,5 +148,4 @@ INFO pbench-tool-meister main -- Remove pid file ... (tm-default-testhost.exampl
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x mpstat
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x iostat
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x mpstat
-/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x iostat
 --- test-execution.log file contents

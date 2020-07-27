@@ -290,7 +290,6 @@ INFO pbench-tool-meister postprocess -- iostat: post-process_tool -- /var/tmp/pb
 INFO pbench-tool-meister postprocess -- mpstat: post-process_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --postprocess --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com 
 INFO pbench-tool-meister wait -- waiting for post-process iostat
 INFO pbench-tool-meister wait -- waiting for post-process mpstat
-INFO pbench-tool-meister wait -- waiting for post-process iostat
 INFO pbench-tool-meister send_tools -- testhost.example.com: send_tools (no-op) lite /var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite
 INFO pbench-tool-meister start -- iostat: start_tool -- /usr/bin/screen -dmS pbench-tool-lite-iostat /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/iostat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com 
 INFO pbench-tool-meister start -- mpstat: start_tool -- /usr/bin/screen -dmS pbench-tool-lite-mpstat /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com 
@@ -302,7 +301,6 @@ INFO pbench-tool-meister postprocess -- iostat: post-process_tool -- /var/tmp/pb
 INFO pbench-tool-meister postprocess -- mpstat: post-process_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --postprocess --dir=/var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite/testhost.example.com 
 INFO pbench-tool-meister wait -- waiting for post-process iostat
 INFO pbench-tool-meister wait -- waiting for post-process mpstat
-INFO pbench-tool-meister wait -- waiting for post-process iostat
 INFO pbench-tool-meister send_tools -- testhost.example.com: send_tools (no-op) lite /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-lite
 INFO pbench-tool-meister main -- terminating
 INFO pbench-tool-meister main -- Remove pid file ... (tm-lite-testhost.example.com.pid)
