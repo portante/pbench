@@ -118,7 +118,7 @@ class PrometheusLauncher:
         self.benchmark_run_dir = benchmark_run_dir
         self.host_tools_dict = host_tools_dict
         self.logger = logger
-        self.allowed_tools = {"node-exporter": "9100"}
+        self.allowed_tools = {"node-exporter": "9100", "dcgm": "8000"}
         self.volume = str(self.benchmark_run_dir) + "/prom_vol"
         self.abort_launch = True
 
