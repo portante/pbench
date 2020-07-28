@@ -125,12 +125,14 @@ class ToolDataSink(Bottle):
     class Terminate(Exception):
         pass
 
-    def __init__(self, redis_server, channel, benchmark_run_dir, logger):
+    def __init__(self, redis_server, channel, benchmark_run_dir, list_hosts, list_tools, logger):
         super(ToolDataSink, self).__init__()
         # Save external state
         self.redis_server = redis_server
         self.channel = channel
         self.benchmark_run_dir = benchmark_run_dir
+        self.list_hosts = list_hosts
+        self.list_tools = list_tools
         self.logger = logger
         # Initialize internal state
         self._hostname = os.environ["full_hostname"]
@@ -462,7 +464,7 @@ class ToolDataSink(Bottle):
                 # Nothing to do, no data movement for "stop"
         
         if self.state == "init":
-            self.pcplog = PCPRedis(["list_of_hosts"],[["list_of_tools"]])
+            self.pcplog = PCPRedis(self.list_hosts, self.list_tools)
         
         if self.state == "start":
             self.pcplog.start_logging()
@@ -782,6 +784,8 @@ def main(argv):
         params = json.loads(params_str)
         channel = params["channel"]
         benchmark_run_dir = Path(params["benchmark_run_dir"]).resolve(strict=True)
+        list_hosts = params["list_hosts"]
+        list_tools = params["list_tools"]
     except Exception as ex:
         logger.error("Unable to fetch and decode parameter key, %s: %s", param_key, ex)
 <<<<<<< HEAD
@@ -836,7 +840,7 @@ def main(argv):
                 else:
                     logger.debug("constructed Redis() object")
 
-                tds_app = ToolDataSink(redis_server, channel, benchmark_run_dir, logger)
+                tds_app = ToolDataSink(redis_server, channel, benchmark_run_dir, list_hosts, list_tools, logger)
                 tds_app.execute()
             except OSError as exc:
                 if exc.errno == errno.EADDRINUSE:

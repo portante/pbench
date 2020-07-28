@@ -497,7 +497,14 @@ def main(argv):
     #   - leave a PID file for the tool data sink process
     #   - FIXME: use podman to start a tool-data-sink container
     tds_param_key = "tds-{}".format(group)
-    tds = dict(channel=channel, benchmark_run_dir=benchmark_run_dir)
+    list_hosts = []
+    list_tools = []
+    for host in tool_group.hostnames.keys():
+        tools = tool_group.get_tools(host)
+        list_hosts.append(host)
+        list_tools.append(tools)
+
+    tds = dict(channel=channel, benchmark_run_dir=benchmark_run_dir, list_hosts=list_hosts, list_tools=list_tools)
     try:
 <<<<<<< HEAD
         redis_server.set(tds_param_key, json.dumps(tds, sort_keys=True))
