@@ -42,10 +42,7 @@ import sys
 import os
 import time
 import json
-<<<<<<< HEAD
 import errno
-=======
->>>>>>> First pass implementation of the "Tool Meister"
 import logging
 import tempfile
 import subprocess
@@ -57,15 +54,11 @@ import requests
 import requests.exceptions
 import hashlib
 
-<<<<<<< HEAD
 from distutils.spawn import find_executable
-=======
->>>>>>> First pass implementation of the "Tool Meister"
 from pathlib import Path
 from pbench.server.utils import md5sum
 
 
-<<<<<<< HEAD
 # Path to external tar executable.
 tar_path = None
 
@@ -74,19 +67,13 @@ class ToolException(Exception):
     pass
 
 
-=======
->>>>>>> First pass implementation of the "Tool Meister"
 class Tool(object):
     """Encapsulates all the state needed to manage a tool running as a background
     process.
 
     The ToolMeister class uses one Tool object per running tool.
 
-<<<<<<< HEAD
     FIXME: this class effectively re-implements the former
-=======
-    FIXME: this class effecitvely re-implements the former
->>>>>>> First pass implementation of the "Tool Meister"
     "tool-scripts/base-tool" bash script.
     """
 
@@ -102,7 +89,6 @@ class Tool(object):
         self.stop_process = None
         self.post_process = None
 
-<<<<<<< HEAD
     def _check_no_processes(self):
         if self.start_process is not None:
             raise ToolException(
@@ -117,25 +103,11 @@ class Tool(object):
                 f"Tool({self.name}) has an unexpected post-process process running"
             )
 
-=======
->>>>>>> First pass implementation of the "Tool Meister"
     def start(self):
         """Creates the background `screen` process running the tool's "start"
         operation.
         """
-<<<<<<< HEAD
         self._check_no_processes()
-=======
-        if (
-            self.start_process is not None
-            or self.stop_process is not None
-            or self.post_process is not None
-        ):
-            self.logger.error(
-                "Tool(%s) has unexpected process already running", self.name
-            )
-            return
->>>>>>> First pass implementation of the "Tool Meister"
         # screen -dm -L -S \"${screen_name}\" ${pbench_bin}/tool-scripts/${name} --${action} --dir=${tool_output_dir} ${tool_opts[@]}
         args = [
             "/usr/bin/screen",
@@ -154,7 +126,6 @@ class Tool(object):
         operation.
         """
         if self.start_process is None:
-<<<<<<< HEAD
             raise ToolException(f"Tool({self.name})'s start process not running")
         if self.stop_process is not None:
             raise ToolException(
@@ -164,21 +135,6 @@ class Tool(object):
             raise ToolException(
                 f"Tool({self.name}) has an unexpected post-process process running"
             )
-=======
-            self.logger.error("Tool(%s)'s start process not already running", self.name)
-            return
-        if self.stop_process is not None:
-            self.logger.error(
-                "Tool(%s) has unexpected stop process already running", self.name
-            )
-            return
-        if self.post_process is not None:
-            self.logger.error(
-                "Tool(%s) has unexpected post-process process already" " running",
-                self.name,
-            )
-            return
->>>>>>> First pass implementation of the "Tool Meister"
 
         # FIXME - before we "stop" a tool, check to see if a
         # "{tool}/{tool}.pid" file exists.  If it doesn't wait for a second to
@@ -191,11 +147,7 @@ class Tool(object):
             cnt += 1
         if not tool_pid_file.exists():
             self.logger.warning(
-<<<<<<< HEAD
                 "Tool(%s) pid file, %s, does not exist after waiting 10 seconds",
-=======
-                "Toll(%s) pid file, %s, does not exist after waiting 10 seconds",
->>>>>>> First pass implementation of the "Tool Meister"
                 self.name,
                 tool_pid_file,
             )
@@ -226,7 +178,6 @@ class Tool(object):
         """
         if self.stop_process is not None:
             if self.start_process is None:
-<<<<<<< HEAD
                 raise ToolException(
                     f"Tool({self.name}) does not have a start process running"
                 )
@@ -234,17 +185,6 @@ class Tool(object):
                 raise ToolException(
                     f"Tool({self.name}) has an unexpected post-process process running"
                 )
-=======
-                self.logger.error(
-                    "Tool(%s) does not have a start process running", self.name
-                )
-                return
-            if self.post_process is not None:
-                self.logger.error(
-                    "Tool(%s) has unexpected post-process process running", self.name
-                )
-                return
->>>>>>> First pass implementation of the "Tool Meister"
             self.logger.info("waiting for stop %s", self.name)
             # We wait for the stop process to finish first ...
             self.stop_process.wait()
@@ -254,7 +194,6 @@ class Tool(object):
             self.start_process = None
         elif self.post_process is not None:
             if self.start_process is not None:
-<<<<<<< HEAD
                 raise ToolException(
                     f"Tool({self.name}) has an unexpected start process running"
                 )
@@ -262,22 +201,10 @@ class Tool(object):
                 raise ToolException(
                     f"Tool({self.name}) has an unexpected stop process running"
                 )
-=======
-                self.logger.error(
-                    "Tool(%s) has unexpected start process running", self.name
-                )
-                return
-            if self.stop_process is not None:
-                self.logger.error(
-                    "Tool(%s) has unexpected stop process running", self.name
-                )
-                return
->>>>>>> First pass implementation of the "Tool Meister"
             self.logger.info("waiting for post-process %s", self.name)
             self.post_process.wait()
             self.post_process = None
         else:
-<<<<<<< HEAD
             raise ToolException(
                 f"Tool({self.name}) wait not called after 'stop' or 'post-process'"
             )
@@ -286,24 +213,6 @@ class Tool(object):
         """Run the tool's "post-process" action in the background.
         """
         self._check_no_processes()
-=======
-            self.logger.error(
-                "wait (%s) not called after 'stop' or 'post-process'", self.name
-            )
-
-    def postprocess(self):
-        """Run the tool's "post-process" action.
-        """
-        if (
-            self.start_process is not None
-            or self.stop_process is not None
-            or self.post_process is not None
-        ):
-            self.logger.error(
-                "Tool(%s) has an unexpected process already running", self.name
-            )
-            return
->>>>>>> First pass implementation of the "Tool Meister"
         # $pbench_bin/tool-scripts/$name --postprocess --dir=$dir "${tool_opts[@]}"
         args = [
             f"{self.pbench_bin}/tool-scripts/{self.name}",
@@ -356,11 +265,7 @@ class ToolMeister(object):
             "channel":    "<Redis server channel name to subscribe to for"
                           " start/stop/send messages from controller>",
             "controller": "<hostname of the controller driving all the tool"
-<<<<<<< HEAD
                           " meisters; if this tool meister is running locally"
-=======
-                          " miesters; if this tool meister is running locally"
->>>>>>> First pass implementation of the "Tool Meister"
                           " with the controller, then it does not need to send"
                           " data to the tool data sink since it can access the"
                           " ${benchmark_run_dir} and ${benchmark_results_dir}"
@@ -390,17 +295,10 @@ class ToolMeister(object):
         }
 
     If the Tool Meister is running on the same host as the pbench agent
-<<<<<<< HEAD
     controller, then the Tool Meister will write it's data directly to the
     ${benchmark_results_dir} using the controller's host name; if the Tool
     Meister is running remotely, then it will use a local temporary directory
     to write it's data, and will send that data to the Tool Data Sink during
-=======
-    controller, then the Tool Meister will write is data directly to the
-    ${benchmark_results_dir} using the controller's host name; if the Tool
-    Meister is running remotely, then it will use a temporary directory under
-    ${benchmark_run_dir}, and will send the data to the Tool Data Sink during
->>>>>>> First pass implementation of the "Tool Meister"
     the "send" phase.
     """
 
@@ -454,23 +352,14 @@ class ToolMeister(object):
         if self._controller != self._hostname:
             self._tmp_dir = Path(
                 tempfile.mkdtemp(
-<<<<<<< HEAD
                     dir=os.environ.get("_PBENCH_TOOL_MEISTER_TMP", "/var/tmp"),
-=======
-                    dir=self._benchmark_run_dir,
->>>>>>> First pass implementation of the "Tool Meister"
                     prefix=f"tm.{self._group}.{os.getpid()}.",
                 )
             )
         else:
             self._tmp_dir = None
-<<<<<<< HEAD
         # Now that we have subscribed to the channel as specified in the
         # params object, we need to pull off the first message, which is an
-=======
-        # Now that we have subscribed the channel as specified in the params
-        # object, we need to pull off the first message, which is an
->>>>>>> First pass implementation of the "Tool Meister"
         # acknowledgement that we have properly subscribed.
         logger.debug("next")
         resp = next(self._chan)
@@ -494,39 +383,15 @@ class ToolMeister(object):
                 key in self._valid_states
             ), f"INTERNAL ERROR: invalid state transition entry, '{key}'"
             assert self._state_trans[key]["next"] in self._valid_states, (
-<<<<<<< HEAD
                 "INTERNAL ERROR: invalid state transition 'next' entry for"
                 f" '{key}', '{self._state_trans[key]['next']}'"
             )
         self._message_keys = frozenset(["directory", "group", "state"])
-=======
-                "INTERANL ERROR: invalie state transition next entry for"
-                f" '{key}', '{self._state_trans[key]['next']}'"
-            )
-        self._message_keys = frozenset(["directory", "group", "state"])
         # The current 'directory' into which the tools are collected; not set
         # until a 'start tools' is executed, cleared when a 'send tools'
         # completes.
         self._directory = None
 
-        # FIXME: run all the "--install" commands for the tools to ensure
-        # they are successful before declaring that we are ready.
-
-        # Tell the entity that started us who we are, indicating we're ready.
-        started_msg = dict(kind="tm", hostname=self._hostname, pid=os.getpid())
-        logger.debug("publish *-start")
-        self._rs.publish(f"{self._channel}-start", json.dumps(started_msg))
-        logger.debug("published *-start")
-<<<<<<< HEAD
->>>>>>> First pass implementation of the "Tool Meister"
-        # The current 'directory' into which the tools are collected; not set
-        # until a 'start tools' is executed, cleared when a 'send tools'
-        # completes.
-        self._directory = None
-=======
->>>>>>> Apply changes based on today's code-review
-
-<<<<<<< HEAD
         # FIXME: run all the "--install" commands for the tools to ensure
         # they are successful before declaring that we are ready.
 
@@ -543,8 +408,6 @@ class ToolMeister(object):
         )
         logger.debug("published *-start")
 
-=======
->>>>>>> First pass implementation of the "Tool Meister"
     def cleanup(self):
         """cleanup - close down the Redis pubsub object.
         """
@@ -566,7 +429,6 @@ class ToolMeister(object):
         """
         data = None
         while not data:
-<<<<<<< HEAD
             self.logger.debug("next")
             try:
                 payload = next(self._chan)
@@ -576,16 +438,6 @@ class ToolMeister(object):
                 self.logger.exception("Error fetching 'next' data off channel")
             else:
                 self.logger.debug("next success")
-=======
-            if not data:
-                self.logger.debug("next")
-                try:
-                    payload = next(self._chan)
-                except Exception:
-                    self.logger.exception("Error fetch next piece of data")
-                else:
-                    self.logger.debug("next success")
->>>>>>> First pass implementation of the "Tool Meister"
             try:
                 json_str = payload["data"].decode("utf-8")
                 data = json.loads(json_str)
@@ -648,13 +500,9 @@ class ToolMeister(object):
         msg = dict(kind="tm", hostname=self._hostname, status=status)
         self.logger.debug("publish tmc")
         try:
-<<<<<<< HEAD
             num_present = self._rs.publish(
                 "tool-meister-client", json.dumps(msg, sort_keys=True)
             )
-=======
-            num_present = self._rs.publish("tool-meister-client", json.dumps(msg))
->>>>>>> First pass implementation of the "Tool Meister"
         except Exception:
             self.logger.exception("Failed to publish client status message")
             ret_val = 1
@@ -676,19 +524,11 @@ class ToolMeister(object):
         The 'state' and 'group' values of the payload have already been
         validated before this "start tools" action is invoked.
 
-<<<<<<< HEAD
         If this Tool Meister instance is running on the same host as the
         controller, we'll use the given "directory" argument directly for
         where tools will store their collected data.  When this Tool Meister
         instance is remote, we'll use a temporary directory on that remote
         host.
-=======
-        If this Tool Miester instance is running on the same host as the
-        controller, we'll use the given "directory" argument directly for
-        where tools will store their collected data.  When this Tool Meister
-        instance is remote, we'll use a temporary directory off of the
-        ${benchmark_run_dir} (self._benchmark_run_dir).
->>>>>>> First pass implementation of the "Tool Meister"
         """
         if self._running_tools or self._directory is not None:
             self.logger.error(
@@ -729,13 +569,9 @@ class ToolMeister(object):
         # 	done < "$tool_group_dir/$this_tool_file"
         # name="$this_tool_file"
         failures = 0
-<<<<<<< HEAD
         tool_cnt = 0
         for name, tool_opts in sorted(self._tools.items()):
             tool_cnt += 1
-=======
-        for name, tool_opts in self._tools.items():
->>>>>>> First pass implementation of the "Tool Meister"
             try:
                 tool = Tool(
                     name, self._group, tool_opts, self.pbench_bin, _dir, self.logger
@@ -749,7 +585,6 @@ class ToolMeister(object):
                 continue
             else:
                 self._running_tools[name] = tool
-<<<<<<< HEAD
         if failures > 0:
             if failures == tool_cnt:
                 msg = "failure"
@@ -758,28 +593,16 @@ class ToolMeister(object):
             self._send_client_status(msg)
         else:
             self._send_client_status("success")
-=======
-        self._send_client_status("success")
->>>>>>> First pass implementation of the "Tool Meister"
         return failures
 
     def _wait_for_tools(self):
         failures = 0
-<<<<<<< HEAD
         for name in sorted(self._tools.keys()):
-=======
-        for name in self._tools.keys():
->>>>>>> First pass implementation of the "Tool Meister"
             try:
                 tool = self._running_tools[name]
             except KeyError:
                 self.logger.error(
-<<<<<<< HEAD
                     "INTERNAL ERROR - tool %s not found in list of running tools", name,
-=======
-                    "INTERNAL ERROR - tool %s not found in list of running" " tools",
-                    name,
->>>>>>> First pass implementation of the "Tool Meister"
                 )
                 failures += 1
                 continue
@@ -787,11 +610,7 @@ class ToolMeister(object):
                 tool.wait()
             except Exception:
                 self.logger.exception(
-<<<<<<< HEAD
                     "Failed to wait for tool %s to stop running in background", name
-=======
-                    "Failed to wait for tool %s to stop running in" " background", name
->>>>>>> First pass implementation of the "Tool Meister"
                 )
                 failures += 1
         return failures
@@ -817,11 +636,7 @@ class ToolMeister(object):
             return False
 
         failures = 0
-<<<<<<< HEAD
         for name in sorted(self._tools.keys()):
-=======
-        for name in self._tools.keys():
->>>>>>> First pass implementation of the "Tool Meister"
             try:
                 tool = self._running_tools[name]
             except KeyError:
@@ -867,11 +682,7 @@ class ToolMeister(object):
             return False
 
         failures = 0
-<<<<<<< HEAD
         for name in sorted(self._tools.keys()):
-=======
-        for name in self._tools.keys():
->>>>>>> First pass implementation of the "Tool Meister"
             try:
                 tool = self._running_tools[name]
             except KeyError:
@@ -887,11 +698,7 @@ class ToolMeister(object):
                 self.logger.exception("Failed to post-process tool %s data", name)
                 failures += 1
         failures += self._wait_for_tools()
-<<<<<<< HEAD
         for name in sorted(self._tools.keys()):
-=======
-        for name in self._tools.keys():
->>>>>>> First pass implementation of the "Tool Meister"
             try:
                 del self._running_tools[name]
             except KeyError:
@@ -917,18 +724,13 @@ class ToolMeister(object):
                 # Invoke tar directly for efficiency.
                 with o_file.open("w") as ofp, e_file.open("w") as efp:
                     cp = subprocess.run(
-<<<<<<< HEAD
                         [tar_path, "-Jcf", tar_file, self._hostname],
-=======
-                        ["/usr/bin/tar", "-Jcf", tar_file, self._hostname],
->>>>>>> First pass implementation of the "Tool Meister"
                         cwd=self._tmp_dir,
                         stdin=None,
                         stdout=ofp,
                         stderr=efp,
                     )
             except Exception:
-<<<<<<< HEAD
                 self.logger.exception("Failed to create tools tar ball '%s'", tar_file)
             else:
                 try:
@@ -1023,88 +825,6 @@ class ToolMeister(object):
                         "unexpected error removing tools tar ball, '%s': %s",
                         tar_file,
                         exc,
-=======
-                self.logger.exception("Failed to create tools tar ball '{}'", tar_file)
-            else:
-                if cp.returncode != 0:
-                    self.logger.error(
-                        "Failed to create tools tar ball; return code: %d",
-                        cp.returncode,
-                    )
-                    failures += 1
-                else:
-                    try:
-                        tar_md5 = md5sum(tar_file)
-                    except Exception:
-                        self.logger.exception("Failed to read tools tar ball")
-                        failures += 1
-                    else:
-                        self.logger.info(
-                            "%s: send_tools %s %s",
-                            self._hostname,
-                            self._group,
-                            self._directory,
-                        )
-                        headers = {"md5sum": tar_md5}
-                        directory_bytes = data["directory"].encode("utf-8")
-                        tool_data_ctx = hashlib.md5(directory_bytes).hexdigest()
-                        url = f"http://{self._controller}:8080/tool-data/{tool_data_ctx}/{self._hostname}"
-                        sent = False
-                        retries = 200
-                        while not sent:
-                            try:
-                                with tar_file.open("rb") as tar_fp:
-                                    response = requests.put(
-                                        url, headers=headers, data=tar_fp
-                                    )
-                            except (
-                                ConnectionRefusedError,
-                                requests.exceptions.ConnectionError,
-                            ) as exc:
-                                self.logger.debug("%s", exc)
-                                # Try until we get a connection.
-                                time.sleep(0.1)
-                                retries -= 1
-                                if retries <= 0:
-                                    raise
-                            else:
-                                sent = True
-                                if response.status_code != 200:
-                                    self.logger.error(
-                                        "PUT '%s' failed with '%d', '%s'",
-                                        url,
-                                        response.status_code,
-                                        response.text,
-                                    )
-                                    failures += 1
-                                else:
-                                    self.logger.debug(
-                                        "PUT '%s' succeeded ('%d', '%s')",
-                                        url,
-                                        response.status_code,
-                                        response.text,
-                                    )
-                                    try:
-                                        shutil.rmtree(self._tmp_dir / self._hostname)
-                                    except Exception:
-                                        self.logger.exception(
-                                            "Failed to remove tool data hierarchy, '%s'",
-                                            self._tmp_dir / self._hostname,
-                                        )
-                                        failures += 1
-                        self.logger.debug(
-                            "%s: send_tools completed",
-                            self._hostname,
-                            self._group,
-                            self._directory,
-                        )
-            finally:
-                try:
-                    tar_file.unlink()
-                except Exception:
-                    self.logger.warning(
-                        "failed to remove tools tar ball, '%s'", tar_file
->>>>>>> First pass implementation of the "Tool Meister"
                     )
         self._directory = None
 
@@ -1115,7 +835,6 @@ class ToolMeister(object):
 
 
 def main(argv):
-<<<<<<< HEAD
     """Main program for the Tool Meister.
 
     This function is the simple driver for the tool meister behaviors,
@@ -1127,13 +846,6 @@ def main(argv):
 
     Returns 0 on success, > 0 when an error occurs.
 
-=======
-    """Main program for the tool meister.
-
-    This function is the simple driver for the tool meister behaviors,
-    handling setup of signals, Redis() client construction, loading and
-    validating parameters.
->>>>>>> First pass implementation of the "Tool Meister"
     """
     PROG = os.path.basename(argv[0])
     pbench_bin = os.path.dirname(os.path.dirname(argv[0]))
@@ -1146,15 +858,12 @@ def main(argv):
         print(f"Invalid arguments: {e}", file=sys.stderr)
         return 1
 
-<<<<<<< HEAD
     global tar_path
     tar_path = find_executable("tar")
     if tar_path is None:
         print(f"External 'tar' executable not found.", file=sys.stderr)
         return 2
 
-=======
->>>>>>> First pass implementation of the "Tool Meister"
     logger = logging.getLogger(PROG)
     fh = logging.FileHandler(f"{param_key}.log")
     if os.environ.get("_PBENCH_UNIT_TESTS"):
@@ -1178,25 +887,15 @@ def main(argv):
         redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
     except Exception as e:
         logger.error(
-<<<<<<< HEAD
             "Unable to construct Redis client, %s:%s: %s", redis_host, redis_port, e
         )
         return 3
-=======
-            "Unable to connect to redis server, %s:%s: %s", redis_host, redis_port, e
-        )
-        return 2
->>>>>>> First pass implementation of the "Tool Meister"
 
     try:
         params_raw = redis_server.get(param_key)
         if params_raw is None:
             logger.error('Parameter key, "%s" does not exist.', param_key)
-<<<<<<< HEAD
             return 4
-=======
-            return 3
->>>>>>> First pass implementation of the "Tool Meister"
         logger.info("params_key (%s): %r", param_key, params_raw)
         params_str = params_raw.decode("utf-8")
         params = json.loads(params_str)
@@ -1208,19 +907,12 @@ def main(argv):
         logger.error(
             "Unable to fetch and decode parameter key, '%s': %s", param_key, exc
         )
-<<<<<<< HEAD
         return 5
-=======
-        return 4
->>>>>>> First pass implementation of the "Tool Meister"
     else:
         redis_server.connection_pool.disconnect()
         del redis_server
 
-<<<<<<< HEAD
     ret_val = 0
-=======
->>>>>>> First pass implementation of the "Tool Meister"
     pidfile_name = f"{param_key}.pid"
     pfctx = pidfile.PIDFile(pidfile_name)
     with daemon.DaemonContext(
@@ -1250,7 +942,6 @@ def main(argv):
                     redis_port,
                     e,
                 )
-<<<<<<< HEAD
                 return 6
             else:
                 logger.debug("constructed Redis() object")
@@ -1259,27 +950,14 @@ def main(argv):
             #   a. handle graceful termination (TERM, INT, QUIT)
             #   b. log operational state (HUP maybe?)
 
-=======
-                return 2
-            else:
-                logger.debug("constructed Redis() object")
-
->>>>>>> First pass implementation of the "Tool Meister"
             try:
                 tm = ToolMeister(pbench_bin, params, redis_server, logger)
             except Exception:
                 logger.exception(
-<<<<<<< HEAD
                     "Unable to construct the ToolMeister object with params, %r",
                     params,
                 )
                 return 7
-=======
-                    "Unable to re-construct the ToolMeister" ' object with parms, "%r"',
-                    params,
-                )
-                return 4
->>>>>>> First pass implementation of the "Tool Meister"
 
             terminate = False
             try:
@@ -1291,13 +969,8 @@ def main(argv):
                         failures = action(data)
                         if failures > 0:
                             logger.warning(
-<<<<<<< HEAD
                                 "%d failures encountered for action, %r,"
                                 " on data, %r",
-=======
-                                "%d failures encountered for action, '%r',"
-                                " on data, '%r'",
->>>>>>> First pass implementation of the "Tool Meister"
                                 failures,
                                 action,
                                 data,
@@ -1307,10 +980,7 @@ def main(argv):
                         terminate = True
             except Exception:
                 logger.exception("Unexpected error encountered")
-<<<<<<< HEAD
                 ret_val = 8
-=======
->>>>>>> First pass implementation of the "Tool Meister"
             finally:
                 tm.cleanup()
         finally:
@@ -1320,11 +990,7 @@ def main(argv):
             except Exception:
                 logger.exception("Failed to remove pid file %s", pidfile_name)
 
-<<<<<<< HEAD
     return ret_val
-=======
-    return 0
->>>>>>> First pass implementation of the "Tool Meister"
 
 
 if __name__ == "__main__":

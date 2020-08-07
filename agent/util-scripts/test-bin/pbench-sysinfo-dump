@@ -1,5 +1,1 @@
-#!/bin/bash
-
-args="$@"
-echo "$0 $args" >> $_testlog
-exit 0
+mpstat

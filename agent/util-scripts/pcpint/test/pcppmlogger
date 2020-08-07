@@ -1,0 +1,36 @@
+#!/bin/sh
+# Test pcpmlogger 
+#
+# Copyright (c) 2020 Ashwin Nayak.  All Rights Reserved.
+#
+
+echo "test output created by pcppmlogger"
+
+_cleanup()
+{
+    echo "=== removing temp files ==="
+    cd $here
+    $sudo rm -rf .tmp results 127.0.0.1.config
+}
+
+status=1	# failure is the default!
+$sudo rm -rf .tmp results 127.0.0.1.config
+trap "_cleanup; exit \$status" 0 1 2 3 15
+
+# real QA test starts here
+echo "=== log localhost tool metrics ==="
+python pcppmlogger.py --input localhost,disk
+[ $? -eq 0 ] || _fail "pcppmlogger failed " 
+pminfo -f -l -A results/127.0.0.1/ disk > $tmp.txt
+
+if [ wc -l $tmp.txt -eq 1 ]; then
+    # output is error: failed
+    echo "failed"
+    status=1
+    exit
+fi
+
+# success, all done
+_cleanup
+status=0
+exit

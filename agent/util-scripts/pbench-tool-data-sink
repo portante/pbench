@@ -23,18 +23,13 @@ import redis
 import errno
 import subprocess
 from pathlib import Path
-<<<<<<< HEAD
 from distutils.spawn import find_executable
-=======
->>>>>>> First pass implementation of the "Tool Meister"
 from threading import Thread, Lock, Condition
 from http import HTTPStatus
 from wsgiref.simple_server import WSGIRequestHandler, make_server
 from bottle import Bottle, ServerAdapter, request, abort
-from pcpint.pcplogger import PCPRedis
 
 
-<<<<<<< HEAD
 # Read in 64 KB chunks off the wire for HTTP PUT requests.
 _BUFFER_SIZE = 65536
 
@@ -47,10 +42,6 @@ client_channel = "tool-meister-client"
 # FIXME: move to a constants area, or a configuration setting.
 _MAX_TOOL_DATA_SIZE = 2 ** 30
 
-=======
-_BUFFER_SIZE = 65536
-
->>>>>>> First pass implementation of the "Tool Meister"
 
 class DataSinkWsgiServer(ServerAdapter):
     """DataSinkWsgiServer - an re-implementation of Bottle's WSGIRefServer
@@ -125,14 +116,12 @@ class ToolDataSink(Bottle):
     class Terminate(Exception):
         pass
 
-    def __init__(self, redis_server, channel, benchmark_run_dir, list_hosts, list_tools, logger):
+    def __init__(self, redis_server, channel, benchmark_run_dir, logger):
         super(ToolDataSink, self).__init__()
         # Save external state
         self.redis_server = redis_server
         self.channel = channel
         self.benchmark_run_dir = benchmark_run_dir
-        self.list_hosts = list_hosts
-        self.list_tools = list_tools
         self.logger = logger
         # Initialize internal state
         self._hostname = os.environ["full_hostname"]
@@ -169,13 +158,9 @@ class ToolDataSink(Bottle):
         # Tell the entity that started us who we are indicating we're ready.
         started_msg = dict(kind="ds", hostname=self._hostname, pid=os.getpid())
         logger.debug("publish *-start")
-<<<<<<< HEAD
         redis_server.publish(
             f"{channel}-start", json.dumps(started_msg, sort_keys=True)
         )
-=======
-        redis_server.publish(f"{channel}-start", json.dumps(started_msg))
->>>>>>> First pass implementation of the "Tool Meister"
         logger.debug("published *-start")
         self.web_server_thread = None
 
@@ -296,19 +281,11 @@ class ToolDataSink(Bottle):
                     # The "localhost" tool meister instance does not send data
                     # to the tool data sink, it just writes it locally.
                     continue
-<<<<<<< HEAD
                 # The `posted` field is "yes" to start (as set below),
                 # "waiting" when we transition to the "send" state, "yes" when
                 # we receive data from the target Tool Meister host, and set
                 # back to "dormant" again when we exit the "send" state.
                 tm["posted"] = "yes"
-=======
-                # Posted is None to start, "yes" when we receive data for Tool
-                # Mesiter host, "waiting" when in the "sending" state, and
-                # "dormant" in other states indicating we should not be
-                # receiving any data at that time.
-                tm["posted"] = None
->>>>>>> First pass implementation of the "Tool Meister"
                 tms[tm["hostname"]] = tm
         return tms
 
@@ -319,7 +296,6 @@ class ToolDataSink(Bottle):
         Waiting is a no-op for all states except 'send'.  In the 'send' state,
         we are expecting to hear from all registered tool meisters.
         """
-<<<<<<< HEAD
         assert self.state == "send", f"expected state 'send' not '{self.state}'"
         assert self._tm_tracking is not None, f"Logic bomb! self._tm_tracking is None"
 
@@ -338,36 +314,6 @@ class ToolDataSink(Bottle):
                 done = True
             if not done:
                 self._cv.wait()
-=======
-        if self.state != "send":
-            return
-
-        with self._lock:
-            assert (
-                self._tm_tracking is not None
-            ), f"Logic bomb! self._tm_tracking is None"
-            done = False
-            while not done:
-                for hostname, tm in self._tm_tracking.items():
-                    if tm["posted"] is None or tm["posted"] == "dormant":
-                        done = True
-                        # Don't bother checking any other Tool Meister.  If we
-                        # have one that has not been setup or is dormant, we
-                        # don't need to wait at all.
-                        break
-                    if tm["posted"] == "waiting":
-                        # Don't bother checking any other Tool Meister when we
-                        # have at least one that has not sent any data.
-                        break
-                    assert tm["posted"] == "yes", f"Logic bomb! {tm['posted']!r}"
-                else:
-                    # We have checked every Tool Meister tracking record and
-                    # they all have posted.  So we can safely exit the wait
-                    # loop
-                    done = True
-                if not done:
-                    self._cv.wait()
->>>>>>> First pass implementation of the "Tool Meister"
         return
 
     def _change_tm_tracking(self, curr, new):
@@ -438,7 +384,6 @@ class ToolDataSink(Bottle):
         with self._lock:
             if self.state == "send":
                 self._change_tm_tracking("dormant", "waiting")
-<<<<<<< HEAD
                 # The Tool Data Sink cannot send success until all the Tool
                 # Meisters have sent their collected data, so wait for all the
                 # tool meisters before proceeding.
@@ -454,30 +399,6 @@ class ToolDataSink(Bottle):
                 # Nothing to do, no data movement for "stop"; FIXME: we should
                 # assert that all Tool Meister's tracking data is "dormant".
 
-=======
-            elif self.state == "start":
-                self._change_tm_tracking("yes", "dormant")
-            elif self.state == "init":
-                self._change_tm_tracking(None, "yes")
-            else:
-                assert self.state == "stop", f"Unexpected state, '{self.state}'"
-                # Nothing to do, no data movement for "stop"
-        
-        if self.state == "init":
-            self.pcplog = PCPRedis(self.list_hosts, self.list_tools)
-        
-        if self.state == "start":
-            self.pcplog.start_logging()
-        
-        if self.state == "stop":
-            self.pcplog.stop_logging()
-
-        if self.state == "send":
-            # The Tool Data Sink cannot send success until all the Tool
-            # Meisters have sent their collected data, so wait for all the
-            # tool meisters before proceeding.
-            self._wait_for_all_data()
->>>>>>> First pass implementation of the "Tool Meister"
         self._send_client_status("success")
 
     def _send_client_status(self, status):
@@ -492,11 +413,7 @@ class ToolDataSink(Bottle):
         self.logger.debug("publish tmc")
         try:
             num_present = self.redis_server.publish(
-<<<<<<< HEAD
                 client_channel, json.dumps(msg, sort_keys=True)
-=======
-                "tool-meister-client", json.dumps(msg)
->>>>>>> First pass implementation of the "Tool Meister"
             )
         except Exception:
             self.logger.exception("Failed to publish client status message")
@@ -523,7 +440,6 @@ class ToolDataSink(Bottle):
         Bottle abort() method for error handling.
 
         """
-<<<<<<< HEAD
         with self._lock:
             if self.state != "send":
                 # FIXME: Don't we have a race condition if the tool meisters
@@ -546,16 +462,6 @@ class ToolDataSink(Bottle):
                     tm_tracker["posted"],
                 )
                 abort(400, "No data expected from a Tool Meister")
-=======
-        if self.state != "send":
-            # FIXME: Don't we have a race condition if the tool meisters
-            # process their messages first?  Seems like we need to send to the
-            # Tool Data Sink first, and then send to all the tool meisters.
-            abort(400, f"Can't accept PUT requests in state '{self.state}'")
-
-        if self.tool_data_ctx != tool_data_ctx:
-            abort(400, f"Unexpected tool data context, '{tool_data_ctx}'")
->>>>>>> First pass implementation of the "Tool Meister"
 
         try:
             content_length = int(request["CONTENT_LENGTH"])
@@ -564,11 +470,7 @@ class ToolDataSink(Bottle):
         except Exception:
             abort(400, "Missing required content-length header")
         else:
-<<<<<<< HEAD
             if content_length > _MAX_TOOL_DATA_SIZE:
-=======
-            if content_length > (2 ** 30):
->>>>>>> First pass implementation of the "Tool Meister"
                 abort(
                     400,
                     "Content object too large, keep it at 1 GB"
@@ -664,11 +566,7 @@ class ToolDataSink(Bottle):
             # Invoke tar directly for efficiency.
             with o_file.open("w") as ofp, e_file.open("w") as efp:
                 cp = subprocess.run(
-<<<<<<< HEAD
                     [tar_path, "-xf", host_tool_data_tb_name],
-=======
-                    ["/usr/bin/tar", "-xf", host_tool_data_tb_name],
->>>>>>> First pass implementation of the "Tool Meister"
                     cwd=target_dir,
                     stdin=None,
                     stdout=ofp,
@@ -694,11 +592,7 @@ class ToolDataSink(Bottle):
                     host_tool_data_tb_name.unlink()
                 except Exception:
                     self.logger.exception(
-<<<<<<< HEAD
                         "Error removing unpacked tar ball '%s' and it's .md5",
-=======
-                        "Error unpacked tar ball '%s' and it's .md5",
->>>>>>> First pass implementation of the "Tool Meister"
                         host_tool_data_tb_name,
                     )
 
@@ -741,36 +635,25 @@ def main(argv):
         logger.error("Invalid arguments: %s", e)
         return 1
 
-<<<<<<< HEAD
     global tar_path
     tar_path = find_executable("tar")
     if tar_path is None:
         logger.error("External 'tar' executable not found")
         return 2
 
-=======
->>>>>>> First pass implementation of the "Tool Meister"
     try:
         redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
     except Exception as e:
         logger.error(
             "Unable to connect to redis server, %s:%s: %s", redis_host, redis_port, e
         )
-<<<<<<< HEAD
         return 3
-=======
-        return 2
->>>>>>> First pass implementation of the "Tool Meister"
 
     try:
         params_raw = redis_server.get(param_key)
         if params_raw is None:
             logger.error('Parameter key, "%s" does not exist.', param_key)
-<<<<<<< HEAD
             return 4
-=======
-            return 3
->>>>>>> First pass implementation of the "Tool Meister"
         logger.info("params_key (%s): %r", param_key, params_raw)
         params_str = params_raw.decode("utf-8")
         # The expected parameters for this "data-sink" is what "channel" to
@@ -784,26 +667,16 @@ def main(argv):
         params = json.loads(params_str)
         channel = params["channel"]
         benchmark_run_dir = Path(params["benchmark_run_dir"]).resolve(strict=True)
-        list_hosts = params["list_hosts"]
-        list_tools = params["list_tools"]
     except Exception as ex:
         logger.error("Unable to fetch and decode parameter key, %s: %s", param_key, ex)
-<<<<<<< HEAD
         return 5
-=======
-        return 4
->>>>>>> First pass implementation of the "Tool Meister"
     else:
         if not benchmark_run_dir.is_dir():
             logger.error(
                 "Run directory argument, %s, must be a real" " directory.",
                 benchmark_run_dir,
             )
-<<<<<<< HEAD
             return 6
-=======
-            return 5
->>>>>>> First pass implementation of the "Tool Meister"
         logger.debug("Tool Data Sink parameters check out, daemonizing ...")
         redis_server.connection_pool.disconnect()
         del redis_server
@@ -832,15 +705,11 @@ def main(argv):
                         redis_port,
                         e,
                     )
-<<<<<<< HEAD
                     return 7
-=======
-                    return 2
->>>>>>> First pass implementation of the "Tool Meister"
                 else:
                     logger.debug("constructed Redis() object")
 
-                tds_app = ToolDataSink(redis_server, channel, benchmark_run_dir, list_hosts, list_tools, logger)
+                tds_app = ToolDataSink(redis_server, channel, benchmark_run_dir, logger)
                 tds_app.execute()
             except OSError as exc:
                 if exc.errno == errno.EADDRINUSE:

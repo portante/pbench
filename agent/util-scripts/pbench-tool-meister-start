@@ -6,8 +6,6 @@
 Responsible for:
 
    1. Starting a redis server
-<<<<<<< HEAD
-<<<<<<< HEAD
    2. Loading tool group data for the given tool group into the redis server
    3. Starting the tool-data-sink process
    4. Starting all the local and remote tool meisters
@@ -17,38 +15,12 @@ process, and any local or remote tool meisters.
 
 The pbench-tool-meister-stop script will take care of (gracefully) stopping
 all of these processes, locally or remotely.
-=======
-   2. Loading up the tool group data for the target group into the redis server
-=======
-   2. Loading tool group data for the given tool group into the redis server
->>>>>>> Apply changes based on today's code-review
-   3. Starting the tool-data-sink process
-   4. Starting all the local and remote tool meisters
-
-When complete we leave running, locally, a redis server and a tool data sink
-process, and any local or remote tool meisters.
-
-<<<<<<< HEAD
-The pbench-tool-meister-stop will take care of (gracefully) stopping all of
-these process, locally or remotely.
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-The pbench-tool-meister-stop script will take care of (gracefully) stopping
-all of these processes, locally or remotely.
->>>>>>> Apply changes based on today's code-review
 """
 
 import sys
 import json
 import os
-<<<<<<< HEAD
-<<<<<<< HEAD
 import signal
-=======
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-import signal
->>>>>>> Apply changes based on today's code-review
 import time
 import errno
 import redis
@@ -75,18 +47,9 @@ port {redis_port:d}
 # FIXME: this should be moved to a shared area
 channel = "tool-meister-chan"
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 # Maximum time to wait for the Redis server to respond.
 REDIS_MAX_WAIT = 60
 
-=======
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-# Maximum time to wait for the Redis server to respond.
-REDIS_MAX_WAIT = 60
-
->>>>>>> Apply changes based on today's code-review
 
 class ToolGroup(object):
     tg_prefix = "tools-v1"
@@ -158,10 +121,6 @@ class ToolGroup(object):
         """
         tools = dict()
         for tool, opts in self.toolnames.items():
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> Apply changes based on today's code-review
             try:
                 host_opts = opts[host]
             except KeyError:
@@ -169,7 +128,6 @@ class ToolGroup(object):
                 pass
             else:
                 tools[tool] = host_opts
-<<<<<<< HEAD
         return tools
 
 
@@ -177,24 +135,6 @@ def wait_for_subs(chan, expected_tms, logger):
     """wait_for_subs - Wait for the data sink and the proper number of TMs to
     register, and when they are all registered, return a dictionary of the
     data sink and tool meister(s) pids.
-=======
-            tools[tool] = opts[host]
-        return tools
-
-
-def wait_for_subs(redis_server, chan, expected_tms, logger):
-    """Wait for the data sink and the proper number of TMs to register, and
-    when they are all registered, then record them in the "tm-pids" key.
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-        return tools
-
-
-def wait_for_subs(chan, expected_tms, logger):
-    """wait_for_subs - Wait for the data sink and the proper number of TMs to
-    register, and when they are all registered, return a dictionary of the
-    data sink and tool meister(s) pids.
->>>>>>> Apply changes based on today's code-review
     """
     pids = dict()
     have_ds = False
@@ -224,15 +164,7 @@ def wait_for_subs(chan, expected_tms, logger):
                 kind=data["kind"], hostname=data["hostname"], pid=data["pid"]
             )
         except KeyError:
-<<<<<<< HEAD
-<<<<<<< HEAD
             logger.warning("unrecognized data payload in message, '%r'", data)
-=======
-            logger.warning("unrecognized data payload in message," " '%r'", data)
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-            logger.warning("unrecognized data payload in message, '%r'", data)
->>>>>>> Apply changes based on today's code-review
             continue
         else:
             if new_data["kind"] == "ds":
@@ -248,10 +180,6 @@ def wait_for_subs(chan, expected_tms, logger):
                 continue
         if have_ds and num_tms == expected_tms:
             break
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> Apply changes based on today's code-review
     return pids
 
 
@@ -291,13 +219,6 @@ def kill_redis_server(pid_file):
         else:
             # "successfully" KILL'd the give process.
             return 1
-<<<<<<< HEAD
-=======
-    # Record our collected pids.
-    redis_server.set("tm-pids", json.dumps(pids))
->>>>>>> First pass implementation of the "Tool Meister"
-=======
->>>>>>> Apply changes based on today's code-review
 
 
 def main(argv):
@@ -343,15 +264,7 @@ def main(argv):
             os.mkdir(tm_dir)
             os.chdir(tm_dir)
         except Exception:
-<<<<<<< HEAD
-<<<<<<< HEAD
             logger.exception("failed to create the local tool meister directory")
-=======
-            logger.exception("failed to create the local tool meister" " directory")
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-            logger.exception("failed to create the local tool meister directory")
->>>>>>> Apply changes based on today's code-review
             return 1
     if not full_hostname or not hostname:
         logger.error(
@@ -360,14 +273,7 @@ def main(argv):
             hostname,
             full_hostname,
         )
-<<<<<<< HEAD
-<<<<<<< HEAD
         return 1
-=======
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-        return 1
->>>>>>> Apply changes based on today's code-review
     if os.environ.get("_PBENCH_UNIT_TESTS"):
         # FIXME: this is an artifact of the unit test environment.
         hostnames = "localhost"
@@ -380,14 +286,7 @@ def main(argv):
 
     # Create the Redis Server pbench-specific configuration file
     redis_conf = tm_dir / "redis.conf"
-<<<<<<< HEAD
-<<<<<<< HEAD
     redis_pid = tm_dir / f"redis_{redis_port:d}.pid"
-=======
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-    redis_pid = tm_dir / f"redis_{redis_port:d}.pid"
->>>>>>> Apply changes based on today's code-review
     try:
         with redis_conf.open("w") as fp:
             fp.write(redis_conf_tmpl.format(**params))
@@ -397,15 +296,7 @@ def main(argv):
     # Start the Redis Server itself
     #   - FIXME: use podman to start a redis server container
     redis_srvr = "redis-server"
-<<<<<<< HEAD
-<<<<<<< HEAD
     redis_srvr_path = find_executable(redis_srvr)
-=======
-    redis_srvr_path = Path(os.path.sep, "usr", "bin", redis_srvr)
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-    redis_srvr_path = find_executable(redis_srvr)
->>>>>>> Apply changes based on today's code-review
     logger.debug("starting redis server")
     try:
         retcode = os.spawnl(os.P_WAIT, redis_srvr_path, redis_srvr, redis_conf)
@@ -415,21 +306,11 @@ def main(argv):
     else:
         if retcode != 0:
             logger.error(
-<<<<<<< HEAD
-<<<<<<< HEAD
                 "failed to create redis server, daemonized; return code: %d", retcode
-=======
-                "failed to create redis server, daemonized; return" " code: %d", retcode
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-                "failed to create redis server, daemonized; return code: %d", retcode
->>>>>>> Apply changes based on today's code-review
             )
             return 1
 
     try:
-<<<<<<< HEAD
-<<<<<<< HEAD
         timeout = time.time() + REDIS_MAX_WAIT
         started_channel = "{}-start".format(channel)
         redis_connection_state = "connecting"
@@ -437,23 +318,6 @@ def main(argv):
         pubsub = redis_server.pubsub()
         while redis_connection_state == "connecting":
             try:
-=======
-        timeout = time.time() + 60
-=======
-        timeout = time.time() + REDIS_MAX_WAIT
->>>>>>> Apply changes based on today's code-review
-        started_channel = "{}-start".format(channel)
-        redis_connection_state = "connecting"
-        redis_server = redis.Redis(host="localhost", port=redis_port, db=0)
-        pubsub = redis_server.pubsub()
-        while redis_connection_state == "connecting":
-            try:
-<<<<<<< HEAD
-                redis_server = redis.Redis(host="localhost", port=redis_port, db=0)
-                pubsub = redis_server.pubsub()
->>>>>>> First pass implementation of the "Tool Meister"
-=======
->>>>>>> Apply changes based on today's code-review
                 pubsub.subscribe(started_channel)
                 chan = pubsub.listen()
                 # Pull off first message which is an acknowledgement we have
@@ -462,29 +326,14 @@ def main(argv):
             except redis.exceptions.ConnectionError:
                 if time.time() > timeout:
                     raise
-<<<<<<< HEAD
-<<<<<<< HEAD
                 time.sleep(0.1)
-=======
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-                time.sleep(0.1)
->>>>>>> Apply changes based on today's code-review
             else:
                 redis_connection_state = "connected"
     except Exception as exc:
         logger.error(
             "Unable to connect to redis server, %s:%d: %r", "localhost", redis_port, exc
         )
-<<<<<<< HEAD
-<<<<<<< HEAD
         return kill_redis_server(redis_pid)
-=======
-        return 1
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-        return kill_redis_server(redis_pid)
->>>>>>> Apply changes based on today's code-review
     else:
         assert resp["type"] == "subscribe", f"bad type: f{resp!r}"
         assert resp["pattern"] is None, f"bad pattern: {resp!r}"
@@ -497,35 +346,14 @@ def main(argv):
     #   - leave a PID file for the tool data sink process
     #   - FIXME: use podman to start a tool-data-sink container
     tds_param_key = "tds-{}".format(group)
-    list_hosts = []
-    list_tools = []
-    for host in tool_group.hostnames.keys():
-        tools = tool_group.get_tools(host)
-        list_hosts.append(host)
-        list_tools.append(tools)
-
-    tds = dict(channel=channel, benchmark_run_dir=benchmark_run_dir, list_hosts=list_hosts, list_tools=list_tools)
+    tds = dict(channel=channel, benchmark_run_dir=benchmark_run_dir)
     try:
-<<<<<<< HEAD
         redis_server.set(tds_param_key, json.dumps(tds, sort_keys=True))
     except Exception:
         logger.exception(
             "failed to create tool data sink parameter key in redis server"
         )
         return kill_redis_server(redis_pid)
-=======
-        redis_server.set(tds_param_key, json.dumps(tds))
-    except Exception:
-        logger.exception(
-            "failed to create tool data sink parameter key in redis server"
-        )
-<<<<<<< HEAD
-        # FIXME: fetch redis-server PID file and kill it.
-        return 1
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-        return kill_redis_server(redis_pid)
->>>>>>> Apply changes based on today's code-review
     data_sink = "pbench-tool-data-sink"
     data_sink_path = _prog_dir / data_sink
     logger.debug("starting tool data sink")
@@ -540,8 +368,6 @@ def main(argv):
         )
     except Exception:
         logger.exception("failed to create pbench data sink, daemonized")
-<<<<<<< HEAD
-<<<<<<< HEAD
         return kill_redis_server(redis_pid)
     else:
         if retcode != 0:
@@ -550,23 +376,6 @@ def main(argv):
                 retcode,
             )
             return kill_redis_server(redis_pid)
-=======
-        return 1
-=======
-        return kill_redis_server(redis_pid)
->>>>>>> Apply changes based on today's code-review
-    else:
-        if retcode != 0:
-            logger.error(
-                "failed to create pbench data sink, daemonized; return code: %d",
-                retcode,
-            )
-<<<<<<< HEAD
-            return 1
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-            return kill_redis_server(redis_pid)
->>>>>>> Apply changes based on today's code-review
 
     # 4. Start all the local and remote tool meister processes
     #   - leave a PID file on each local/remote host
@@ -576,18 +385,8 @@ def main(argv):
     successes = 0
     tool_meister_cmd = "pbench-tool-meister"
     tool_meister_cmd_path = _prog_dir / tool_meister_cmd
-<<<<<<< HEAD
-<<<<<<< HEAD
     ssh_cmd = "ssh"
     ssh_path = find_executable(ssh_cmd)
-=======
-    ssh_path = find_executable("ssh")
-    ssh_cmd = "ssh"
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-    ssh_cmd = "ssh"
-    ssh_path = find_executable(ssh_cmd)
->>>>>>> Apply changes based on today's code-review
     args = [
         ssh_cmd,
         "<host replace me>",
@@ -615,7 +414,6 @@ def main(argv):
         )
         tm_param_key = "tm-{}-{}".format(group, host)
         try:
-<<<<<<< HEAD
             redis_server.set(tm_param_key, json.dumps(tm, sort_keys=True))
         except Exception:
             logger.exception(
@@ -624,20 +422,6 @@ def main(argv):
             return kill_redis_server(redis_pid)
         if host == full_hostname:
             logger.debug("starting localhost tool meister")
-=======
-            redis_server.set(tm_param_key, json.dumps(tm))
-        except Exception:
-            logger.exception(
-                "failed to create tool meister parameter key in redis server"
-            )
-            return kill_redis_server(redis_pid)
-        if host == full_hostname:
-<<<<<<< HEAD
-            logger.debug("starting locolhost tool meister")
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-            logger.debug("starting localhost tool meister")
->>>>>>> Apply changes based on today's code-review
             try:
                 retcode = os.spawnl(
                     os.P_WAIT,
@@ -648,94 +432,44 @@ def main(argv):
                     tm_param_key,
                 )
             except Exception:
-<<<<<<< HEAD
-<<<<<<< HEAD
                 logger.exception("failed to create localhost tool meister, daemonized")
-=======
-                logger.exception("failed to create pbench tool meister," " daemonized")
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-                logger.exception("failed to create localhost tool meister, daemonized")
->>>>>>> Apply changes based on today's code-review
                 failures += 1
             else:
                 if retcode == 0:
                     successes += 1
                 else:
                     logger.error(
-<<<<<<< HEAD
-<<<<<<< HEAD
                         "failed to create localhost tool meister,"
-=======
-                        "failed to create pbench tool meister,"
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-                        "failed to create localhost tool meister,"
->>>>>>> Apply changes based on today's code-review
                         " daemonized; return code: %d",
                         retcode,
                     )
                     failures += 1
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-
->>>>>>> First pass implementation of the "Tool Meister"
-=======
->>>>>>> Apply changes based on today's code-review
             continue
         args[1] = host
         args[5] = tm_param_key
         logger.debug(
             "starting remote tool meister, ssh_path=%r args=%r", ssh_path, args
         )
-<<<<<<< HEAD
-<<<<<<< HEAD
         # FIXME: should we consider using Ansible instead?
-=======
-        # FIXME: here we should consider using Ansible instead
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-        # FIXME: should we consider using Ansible instead?
->>>>>>> Apply changes based on today's code-review
         try:
             pid = os.spawnv(os.P_NOWAIT, ssh_path, args)
         except Exception:
             logger.exception(
-<<<<<<< HEAD
-<<<<<<< HEAD
                 "failed to create a tool meister instance for host %s", host
-=======
-                "failed to create a tool meister instance for" " host %s", host
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-                "failed to create a tool meister instance for host %s", host
->>>>>>> Apply changes based on today's code-review
             )
             failures += 1
         else:
             ssh_pids.append((pid, host))
             successes += 1
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> Apply changes based on today's code-review
 
     if failures > 0:
         return kill_redis_server(redis_pid)
 
-<<<<<<< HEAD
-=======
->>>>>>> First pass implementation of the "Tool Meister"
-=======
->>>>>>> Apply changes based on today's code-review
     # Wait for all the SSH pids to complete.
     for pid, host in ssh_pids:
         try:
             exit_pid, _exit_status = os.waitpid(pid, 0)
         except OSError:
-<<<<<<< HEAD
-<<<<<<< HEAD
             failures += 1
             successes -= 1
             logger.exception(
@@ -746,26 +480,6 @@ def main(argv):
             if pid != exit_pid:
                 failures += 1
                 successes -= 1
-=======
-            logger.exception(
-                "failed to create a tool meister instance for" " host %s", host
-            )
-=======
->>>>>>> Apply changes based on today's code-review
-            failures += 1
-            successes -= 1
-            logger.exception(
-                "failed to create a tool meister instance for host %s", host
-            )
-        else:
-            exit_status = os.WEXITSTATUS(_exit_status)
-            if pid != exit_pid:
-<<<<<<< HEAD
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-                failures += 1
-                successes -= 1
->>>>>>> Apply changes based on today's code-review
                 logger.error(
                     "INTERNAL ERROR: os.waitpid(%d, 0) returned (%d, %d [%0X])",
                     pid,
@@ -778,15 +492,7 @@ def main(argv):
                     failures += 1
                     successes -= 1
                     logger.error(
-<<<<<<< HEAD
-<<<<<<< HEAD
                         "failed to start tool meister on remote host '%s'"
-=======
-                        "failed to start tool-meister on remote host '%s'"
->>>>>>> First pass implementation of the "Tool Meister"
-=======
-                        "failed to start tool meister on remote host '%s'"
->>>>>>> Apply changes based on today's code-review
                         " (pid %d), exit status: %d [%0X]",
                         host,
                         pid,
@@ -794,8 +500,6 @@ def main(argv):
                         _exit_status,
                     )
 
-<<<<<<< HEAD
-<<<<<<< HEAD
     if failures > 0:
         logger.info("terminating tool meister startup due to failures")
         terminate_msg = dict(state="terminate", group=group, directory=None)
@@ -803,29 +507,10 @@ def main(argv):
             ret = redis_server.publish(
                 channel, json.dumps(terminate_msg, sort_keys=True)
             )
-=======
-    # If any successes, then we need to wait for them to show up as
-    # subscribers.
-    logger.debug("waiting for subs")
-    wait_for_subs(redis_server, chan, successes, logger)
-
-    # For any failures, just terminate early.
-=======
->>>>>>> Apply changes based on today's code-review
-    if failures > 0:
-        logger.info("terminating tool meister startup due to failures")
-        terminate_msg = dict(state="terminate", group=group, directory=None)
-        try:
-            ret = redis_server.publish(channel, json.dumps(terminate_msg))
->>>>>>> First pass implementation of the "Tool Meister"
         except Exception:
             logger.exception("Failed to publish terminate message")
         else:
             logger.debug("publish() = %r", ret)
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> Apply changes based on today's code-review
         ret_val = kill_redis_server(redis_pid)
     elif successes > 0:
         # If any successes, then we need to wait for them to show up as
@@ -837,11 +522,7 @@ def main(argv):
         pids = wait_for_subs(chan, successes, logger)
         # Record our collected pids.
         try:
-<<<<<<< HEAD
             redis_server.set("tm-pids", json.dumps(pids, sort_keys=True))
-=======
-            redis_server.set("tm-pids", json.dumps(pids))
->>>>>>> Apply changes based on today's code-review
         except Exception:
             logger.exception("failed to set tool meister pids object")
             ret_val = kill_redis_server(redis_pid)
@@ -854,14 +535,6 @@ def main(argv):
         )
         ret_val = kill_redis_server(redis_pid)
     return ret_val
-<<<<<<< HEAD
-=======
-        # FIXME: kill redis server PID
-
-    return 1 if failures > 0 else 0
->>>>>>> First pass implementation of the "Tool Meister"
-=======
->>>>>>> Apply changes based on today's code-review
 
 
 if __name__ == "__main__":
