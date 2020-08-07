@@ -23,13 +23,18 @@ import redis
 import errno
 import subprocess
 from pathlib import Path
+from distutils.spawn import find_executable
 from threading import Thread, Lock, Condition
 from http import HTTPStatus
 from wsgiref.simple_server import WSGIRequestHandler, make_server
 from bottle import Bottle, ServerAdapter, request, abort
 
 
+# Read in 64 KB chunks off the wire for HTTP PUT requests.
 _BUFFER_SIZE = 65536
+
+# Executable path of the tar program.
+tar_path = None
 
 
 class DataSinkWsgiServer(ServerAdapter):
@@ -547,7 +552,7 @@ class ToolDataSink(Bottle):
             # Invoke tar directly for efficiency.
             with o_file.open("w") as ofp, e_file.open("w") as efp:
                 cp = subprocess.run(
-                    ["/usr/bin/tar", "-xf", host_tool_data_tb_name],
+                    [tar_path, "-xf", host_tool_data_tb_name],
                     cwd=target_dir,
                     stdin=None,
                     stdout=ofp,
@@ -616,19 +621,25 @@ def main(argv):
         logger.error("Invalid arguments: %s", e)
         return 1
 
+    global tar_path
+    tar_path = find_executable("tar")
+    if tar_path is None:
+        logger.error("External 'tar' executable not found")
+        return 2
+
     try:
         redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
     except Exception as e:
         logger.error(
             "Unable to connect to redis server, %s:%s: %s", redis_host, redis_port, e
         )
-        return 2
+        return 3
 
     try:
         params_raw = redis_server.get(param_key)
         if params_raw is None:
             logger.error('Parameter key, "%s" does not exist.', param_key)
-            return 3
+            return 4
         logger.info("params_key (%s): %r", param_key, params_raw)
         params_str = params_raw.decode("utf-8")
         # The expected parameters for this "data-sink" is what "channel" to
@@ -644,14 +655,14 @@ def main(argv):
         benchmark_run_dir = Path(params["benchmark_run_dir"]).resolve(strict=True)
     except Exception as ex:
         logger.error("Unable to fetch and decode parameter key, %s: %s", param_key, ex)
-        return 4
+        return 5
     else:
         if not benchmark_run_dir.is_dir():
             logger.error(
                 "Run directory argument, %s, must be a real" " directory.",
                 benchmark_run_dir,
             )
-            return 5
+            return 6
         logger.debug("Tool Data Sink parameters check out, daemonizing ...")
         redis_server.connection_pool.disconnect()
         del redis_server
@@ -680,7 +691,7 @@ def main(argv):
                         redis_port,
                         e,
                     )
-                    return 2
+                    return 7
                 else:
                     logger.debug("constructed Redis() object")
 
