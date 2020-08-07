@@ -33,7 +33,7 @@ function register {
     pbench-register-tool --group "${group}" --name ${1}${remote_arg}
     status=${?}
     if [[ ${status} -ne 0 ]]; then
-        printf -- "\"pbench-register-tool --group ${group} --name ${1}${remote_arg}\" failed to execute successfully (exit code: ${status})\n"
+        printf -- "ERROR - \"pbench-register-tool --group %s --name %s\" failed to execute successfully (exit code: %s)\n" "${group}" "${1}${remote_arg}" "${status}" >&2
         exit 1
     fi
 }
@@ -53,14 +53,18 @@ fi
 mkdir ${benchmark_run_dir}
 status=${?}
 if [[ ${status} -ne 0 ]]; then
-    printf -- "\"mkdir ${benchmark_run_dir}\" failed to execute successfully (exit code: ${status})\n"
+    printf -- "ERROR - \"mkdir %s\" failed to execute successfully (exit code: %s)\n" "${benchmark_run_dir}" "${status}" >&2
     exit 1
 fi
 
-pbench-tool-meister-start ${group}
+function _timeout {
+    timeout --kill-after=30 --signal TERM 60 $*
+}
+
+_timeout pbench-tool-meister-start ${group}
 status=${?}
 if [[ ${status} -ne 0 ]]; then
-    printf -- "\"pbench-tool-meister-start ${group}\" failed to execute successfully (exit code: ${status})\n"
+    printf -- "ERROR - \"pbench-tool-meister-start %s\" failed to execute successfully (exit code: %s)\n" "${group}" "${status}" >&2
     exit 1
 fi
 
@@ -72,12 +76,27 @@ tools_dir="${benchmark_results_dir}/tools-${group}"
 mkdir -p ${tools_dir}
 status=${?}
 if [[ ${status} -ne 0 ]]; then
-    printf -- "ERROR - failed to create tool directory, '%s' (exit code: %s)\n" "${tools_dir}" "${status}"
+    printf -- "ERROR - failed to create tool directory, '%s' (exit code: %s)\n" "${tools_dir}" "${status}" >&2
     exit 1
 fi
-pbench-start-tools --group="${group}" --dir="${tools_dir}"
-pbench-stop-tools --group="${group}" --dir="${tools_dir}"
-pbench-postprocess-tools --group="${group}" --dir="${tools_dir}"
+_timeout pbench-start-tools --group="${group}" --dir="${tools_dir}"
+status=${?}
+if [[ ${status} -ne 0 ]]; then
+    printf -- "ERROR - \"pbench-start-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
+    exit 1
+fi
+_timeout pbench-stop-tools --group="${group}" --dir="${tools_dir}"
+status=${?}
+if [[ ${status} -ne 0 ]]; then
+    printf -- "ERROR - \"pbench-stop-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
+    exit 1
+fi
+_timeout pbench-postprocess-tools --group="${group}" --dir="${tools_dir}"
+status=${?}
+if [[ ${status} -ne 0 ]]; then
+    printf -- "ERROR - \"pbench-postprocess-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
+    exit 1
+fi
 
 iteration="1-iter-one"
 
@@ -86,16 +105,31 @@ tools_dir="${benchmark_results_dir}/tools-${group}"
 mkdir -p ${tools_dir}
 status=${?}
 if [[ ${status} -ne 0 ]]; then
-    printf -- "ERROR - failed to create tool directory, '%s' (exit code: %s)\n" "${tools_dir}" "${status}"
+    printf -- "ERROR - failed to create tool directory, '%s' (exit code: %s)\n" "${tools_dir}" "${status}" >&2
     exit 1
 fi
-pbench-start-tools --group="${group}" --dir="${tools_dir}"
-pbench-stop-tools --group="${group}" --dir="${tools_dir}"
-pbench-postprocess-tools --group="${group}" --dir="${tools_dir}"
-
-pbench-tool-meister-stop
+_timeout pbench-start-tools --group="${group}" --dir="${tools_dir}"
 status=${?}
 if [[ ${status} -ne 0 ]]; then
-    printf -- "\"pbench-tool-meister-stop\" failed to execute successfully (exit code: ${status})\n"
+    printf -- "ERROR - \"pbench-start-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
+    exit 1
+fi
+_timeout pbench-stop-tools --group="${group}" --dir="${tools_dir}"
+status=${?}
+if [[ ${status} -ne 0 ]]; then
+    printf -- "ERROR - \"pbench-stop-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
+    exit 1
+fi
+_timeout pbench-postprocess-tools --group="${group}" --dir="${tools_dir}"
+status=${?}
+if [[ ${status} -ne 0 ]]; then
+    printf -- "ERROR - \"pbench-postprocess-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
+    exit 1
+fi
+
+_timeout pbench-tool-meister-stop
+status=${?}
+if [[ ${status} -ne 0 ]]; then
+    printf -- "ERROR - \"pbench-tool-meister-stop\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
     exit 1
 fi

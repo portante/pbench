@@ -42,6 +42,7 @@ import sys
 import os
 import time
 import json
+import errno
 import logging
 import tempfile
 import subprocess
@@ -53,8 +54,13 @@ import requests
 import requests.exceptions
 import hashlib
 
+from distutils.spawn import find_executable
 from pathlib import Path
 from pbench.server.utils import md5sum
+
+
+# Path to external tar executable.
+tar_path = None
 
 
 class ToolException(Exception):
@@ -703,93 +709,107 @@ class ToolMeister(object):
                 # Invoke tar directly for efficiency.
                 with o_file.open("w") as ofp, e_file.open("w") as efp:
                     cp = subprocess.run(
-                        ["/usr/bin/tar", "-Jcf", tar_file, self._hostname],
+                        [tar_path, "-Jcf", tar_file, self._hostname],
                         cwd=self._tmp_dir,
                         stdin=None,
                         stdout=ofp,
                         stderr=efp,
                     )
             except Exception:
-                self.logger.exception("Failed to create tools tar ball '{}'", tar_file)
+                self.logger.exception("Failed to create tools tar ball '%s'", tar_file)
             else:
-                if cp.returncode != 0:
-                    self.logger.error(
-                        "Failed to create tools tar ball; return code: %d",
-                        cp.returncode,
-                    )
-                    failures += 1
-                else:
-                    try:
-                        tar_md5 = md5sum(tar_file)
-                    except Exception:
-                        self.logger.exception("Failed to read tools tar ball")
+                try:
+                    if cp.returncode != 0:
+                        self.logger.error(
+                            "Failed to create tools tar ball; return code: %d",
+                            cp.returncode,
+                        )
                         failures += 1
                     else:
-                        self.logger.info(
-                            "%s: send_tools %s %s",
-                            self._hostname,
-                            self._group,
-                            self._directory,
-                        )
-                        headers = {"md5sum": tar_md5}
-                        directory_bytes = data["directory"].encode("utf-8")
-                        tool_data_ctx = hashlib.md5(directory_bytes).hexdigest()
-                        url = f"http://{self._controller}:8080/tool-data/{tool_data_ctx}/{self._hostname}"
-                        sent = False
-                        retries = 200
-                        while not sent:
-                            try:
-                                with tar_file.open("rb") as tar_fp:
-                                    response = requests.put(
-                                        url, headers=headers, data=tar_fp
-                                    )
-                            except (
-                                ConnectionRefusedError,
-                                requests.exceptions.ConnectionError,
-                            ) as exc:
-                                self.logger.debug("%s", exc)
-                                # Try until we get a connection.
-                                time.sleep(0.1)
-                                retries -= 1
-                                if retries <= 0:
-                                    raise
-                            else:
-                                sent = True
-                                if response.status_code != 200:
-                                    self.logger.error(
-                                        "PUT '%s' failed with '%d', '%s'",
-                                        url,
-                                        response.status_code,
-                                        response.text,
-                                    )
-                                    failures += 1
+                        try:
+                            tar_md5 = md5sum(tar_file)
+                        except Exception:
+                            self.logger.exception(
+                                "Failed to read tools tar ball, '%s'", tar_file
+                            )
+                            failures += 1
+                        else:
+                            self.logger.info(
+                                "%s: send_tools %s %s",
+                                self._hostname,
+                                self._group,
+                                self._directory,
+                            )
+                            headers = {"md5sum": tar_md5}
+                            directory_bytes = data["directory"].encode("utf-8")
+                            tool_data_ctx = hashlib.md5(directory_bytes).hexdigest()
+                            url = f"http://{self._controller}:8080/tool-data/{tool_data_ctx}/{self._hostname}"
+                            sent = False
+                            retries = 200
+                            while not sent:
+                                try:
+                                    with tar_file.open("rb") as tar_fp:
+                                        response = requests.put(
+                                            url, headers=headers, data=tar_fp
+                                        )
+                                except (
+                                    ConnectionRefusedError,
+                                    requests.exceptions.ConnectionError,
+                                ) as exc:
+                                    self.logger.debug("%s", exc)
+                                    # Try until we get a connection.
+                                    time.sleep(0.1)
+                                    retries -= 1
+                                    if retries <= 0:
+                                        raise
                                 else:
-                                    self.logger.debug(
-                                        "PUT '%s' succeeded ('%d', '%s')",
-                                        url,
-                                        response.status_code,
-                                        response.text,
-                                    )
-                                    try:
-                                        shutil.rmtree(self._tmp_dir / self._hostname)
-                                    except Exception:
-                                        self.logger.exception(
-                                            "Failed to remove tool data hierarchy, '%s'",
-                                            self._tmp_dir / self._hostname,
+                                    sent = True
+                                    if response.status_code != 200:
+                                        self.logger.error(
+                                            "PUT '%s' failed with '%d', '%s'",
+                                            url,
+                                            response.status_code,
+                                            response.text,
                                         )
                                         failures += 1
-                        self.logger.debug(
-                            "%s: send_tools completed",
-                            self._hostname,
-                            self._group,
-                            self._directory,
-                        )
+                                    else:
+                                        self.logger.debug(
+                                            "PUT '%s' succeeded ('%d', '%s')",
+                                            url,
+                                            response.status_code,
+                                            response.text,
+                                        )
+                                        try:
+                                            shutil.rmtree(
+                                                self._tmp_dir / self._hostname
+                                            )
+                                        except Exception:
+                                            self.logger.exception(
+                                                "Failed to remove tool data hierarchy, '%s'",
+                                                self._tmp_dir / self._hostname,
+                                            )
+                                            failures += 1
+                            self.logger.debug(
+                                "%s: send_tools completed",
+                                self._hostname,
+                                self._group,
+                                self._directory,
+                            )
+                except Exception:
+                    self.logger.exception("Unexpected error encountered")
             finally:
                 try:
                     tar_file.unlink()
-                except Exception:
+                except OSError as exc:
+                    if exc.errno != errno.ENOENT:
+                        self.logger.warning(
+                            "error removing tools tar ball, '%s': %s", tar_file, exc
+                        )
+                except Exception as exc:
                     self.logger.warning(
-                        "failed to remove tools tar ball, '%s'", tar_file
+                        "unexpected error removing tools tar ball, '%s': %s",
+                        tar_file,
+                        exc,
                     )
         self._directory = None
 
@@ -817,6 +837,12 @@ def main(argv):
         print(f"Invalid arguments: {e}", file=sys.stderr)
         return 1
 
+    global tar_path
+    tar_path = find_executable("tar")
+    if tar_path is None:
+        print(f"External 'tar' executable not found.", file=sys.stderr)
+        return 2
+
     logger = logging.getLogger(PROG)
     fh = logging.FileHandler(f"{param_key}.log")
     if os.environ.get("_PBENCH_UNIT_TESTS"):
@@ -842,13 +868,13 @@ def main(argv):
         logger.error(
             "Unable to connect to redis server, %s:%s: %s", redis_host, redis_port, e
         )
-        return 2
+        return 3
 
     try:
         params_raw = redis_server.get(param_key)
         if params_raw is None:
             logger.error('Parameter key, "%s" does not exist.', param_key)
-            return 3
+            return 4
         logger.info("params_key (%s): %r", param_key, params_raw)
         params_str = params_raw.decode("utf-8")
         params = json.loads(params_str)
@@ -860,7 +886,7 @@ def main(argv):
         logger.error(
             "Unable to fetch and decode parameter key, '%s': %s", param_key, exc
         )
-        return 4
+        return 5
     else:
         redis_server.connection_pool.disconnect()
         del redis_server
@@ -894,7 +920,7 @@ def main(argv):
                     redis_port,
                     e,
                 )
-                return 2
+                return 6
             else:
                 logger.debug("constructed Redis() object")
 
@@ -905,7 +931,7 @@ def main(argv):
                     "Unable to re-construct the ToolMeister" ' object with parms, "%r"',
                     params,
                 )
-                return 4
+                return 7
 
             terminate = False
             try:
