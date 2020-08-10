@@ -36,6 +36,12 @@ _BUFFER_SIZE = 65536
 # Executable path of the tar program.
 tar_path = None
 
+# FIXME: move to a constants area, or a configuration setting.
+client_channel = "tool-meister-client"
+
+# FIXME: move to a constants area, or a configuration setting.
+_MAX_TOOL_DATA_SIZE = 2 ** 30
+
 
 class DataSinkWsgiServer(ServerAdapter):
     """DataSinkWsgiServer - an re-implementation of Bottle's WSGIRefServer
@@ -275,11 +281,11 @@ class ToolDataSink(Bottle):
                     # The "localhost" tool meister instance does not send data
                     # to the tool data sink, it just writes it locally.
                     continue
-                # Posted is None to start, "yes" when we receive data for Tool
-                # Mesiter host, "waiting" when in the "sending" state, and
-                # "dormant" in other states indicating we should not be
-                # receiving any data at that time.
-                tm["posted"] = None
+                # The `posted` field is "yes" to start (as set below),
+                # "waiting" when we transition to the "send" state, "yes" when
+                # we receive data from the target Tool Meister host, and set
+                # back to "dormant" again when we exit the "send" state.
+                tm["posted"] = "yes"
                 tms[tm["hostname"]] = tm
         return tms
 
@@ -290,34 +296,24 @@ class ToolDataSink(Bottle):
         Waiting is a no-op for all states except 'send'.  In the 'send' state,
         we are expecting to hear from all registered tool meisters.
         """
-        if self.state != "send":
-            return
+        assert self.state == "send", f"expected state 'send' not '{self.state}'"
+        assert self._tm_tracking is not None, f"Logic bomb! self._tm_tracking is None"
 
-        with self._lock:
-            assert (
-                self._tm_tracking is not None
-            ), f"Logic bomb! self._tm_tracking is None"
-            done = False
-            while not done:
-                for hostname, tm in self._tm_tracking.items():
-                    if tm["posted"] is None or tm["posted"] == "dormant":
-                        done = True
-                        # Don't bother checking any other Tool Meister.  If we
-                        # have one that has not been setup or is dormant, we
-                        # don't need to wait at all.
-                        break
-                    if tm["posted"] == "waiting":
-                        # Don't bother checking any other Tool Meister when we
-                        # have at least one that has not sent any data.
-                        break
-                    assert tm["posted"] == "yes", f"Logic bomb! {tm['posted']!r}"
-                else:
-                    # We have checked every Tool Meister tracking record and
-                    # they all have posted.  So we can safely exit the wait
-                    # loop
-                    done = True
-                if not done:
-                    self._cv.wait()
+        done = False
+        while not done:
+            for hostname, tm in self._tm_tracking.items():
+                if tm["posted"] == "waiting":
+                    # Don't bother checking any other Tool Meister when we
+                    # have at least one that has not sent any data.
+                    break
+                assert tm["posted"] == "yes", f"Logic bomb! {tm['posted']!r}"
+            else:
+                # We have checked every Tool Meister tracking record and
+                # they all have posted their data (`posted` field is set
+                # to "yes").  So we can safely exit the wait loop
+                done = True
+            if not done:
+                self._cv.wait()
         return
 
     def _change_tm_tracking(self, curr, new):
@@ -388,17 +384,21 @@ class ToolDataSink(Bottle):
         with self._lock:
             if self.state == "send":
                 self._change_tm_tracking("dormant", "waiting")
+                # The Tool Data Sink cannot send success until all the Tool
+                # Meisters have sent their collected data, so wait for all the
+                # tool meisters before proceeding.
+                self._wait_for_all_data()
+                # At this point all tracking data should be "yes".
             elif self.state == "start":
+                # We are transitioning into the "start" state, so mark each
+                # Tool Meister as being dormant (i.e. we should not receive
+                # any data from them).
                 self._change_tm_tracking("yes", "dormant")
             else:
                 assert self.state == "stop", f"Unexpected state, '{self.state}'"
-                # Nothing to do, no data movement for "stop"
+                # Nothing to do, no data movement for "stop"; FIXME: we should
+                # assert that all Tool Meister's tracking data is "dormant".
 
-        if self.state == "send":
-            # The Tool Data Sink cannot send success until all the Tool
-            # Meisters have sent their collected data, so wait for all the
-            # tool meisters before proceeding.
-            self._wait_for_all_data()
         self._send_client_status("success")
 
     def _send_client_status(self, status):
@@ -413,7 +413,7 @@ class ToolDataSink(Bottle):
         self.logger.debug("publish tmc")
         try:
             num_present = self.redis_server.publish(
-                "tool-meister-client", json.dumps(msg, sort_keys=True)
+                client_channel, json.dumps(msg, sort_keys=True)
             )
         except Exception:
             self.logger.exception("Failed to publish client status message")
@@ -440,14 +440,28 @@ class ToolDataSink(Bottle):
         Bottle abort() method for error handling.
 
         """
-        if self.state != "send":
-            # FIXME: Don't we have a race condition if the tool meisters
-            # process their messages first?  Seems like we need to send to the
-            # Tool Data Sink first, and then send to all the tool meisters.
-            abort(400, f"Can't accept PUT requests in state '{self.state}'")
-
-        if self.tool_data_ctx != tool_data_ctx:
-            abort(400, f"Unexpected tool data context, '{tool_data_ctx}'")
+        with self._lock:
+            if self.state != "send":
+                # FIXME: Don't we have a race condition if the tool meisters
+                # process their messages first?  Seems like we need to send to
+                # the Tool Data Sink first, and then send to all the tool
+                # meisters.
+                abort(400, f"Can't accept PUT requests in state '{self.state}'")
+            if self.tool_data_ctx != tool_data_ctx:
+                # Tool Data Sink and this Tool Meister are out of sink as to
+                # what data is expected.
+                abort(400, f"Unexpected tool data context, '{tool_data_ctx}'")
+            # Fetch the Tool Meister tracking record for this host and verify
+            # it is in the expected waiting state.
+            tm_tracker = self._tm_tracking[hostname]
+            if tm_tracker["posted"] != "waiting":
+                self.logger.error(
+                    "INTERNAL ERROR: expected Tool Meister for host, %s, in"
+                    " `waiting` state, found in `%s` state",
+                    hostname,
+                    tm_tracker["posted"],
+                )
+                abort(400, "No data expected from a Tool Meister")
 
         try:
             content_length = int(request["CONTENT_LENGTH"])
@@ -456,7 +470,7 @@ class ToolDataSink(Bottle):
         except Exception:
             abort(400, "Missing required content-length header")
         else:
-            if content_length > (2 ** 30):
+            if content_length > _MAX_TOOL_DATA_SIZE:
                 abort(
                     400,
                     "Content object too large, keep it at 1 GB"
@@ -578,7 +592,7 @@ class ToolDataSink(Bottle):
                     host_tool_data_tb_name.unlink()
                 except Exception:
                     self.logger.exception(
-                        "Error unpacked tar ball '%s' and it's .md5",
+                        "Error removing unpacked tar ball '%s' and it's .md5",
                         host_tool_data_tb_name,
                     )
 

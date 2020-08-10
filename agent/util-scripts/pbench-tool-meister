@@ -73,7 +73,7 @@ class Tool(object):
 
     The ToolMeister class uses one Tool object per running tool.
 
-    FIXME: this class effecitvely re-implements the former
+    FIXME: this class effectively re-implements the former
     "tool-scripts/base-tool" bash script.
     """
 
@@ -199,7 +199,7 @@ class Tool(object):
                 )
             if self.stop_process is not None:
                 raise ToolException(
-                    f"Tool({self.name}) has unexpected stop process running"
+                    f"Tool({self.name}) has an unexpected stop process running"
                 )
             self.logger.info("waiting for post-process %s", self.name)
             self.post_process.wait()
@@ -265,7 +265,7 @@ class ToolMeister(object):
             "channel":    "<Redis server channel name to subscribe to for"
                           " start/stop/send messages from controller>",
             "controller": "<hostname of the controller driving all the tool"
-                          " miesters; if this tool meister is running locally"
+                          " meisters; if this tool meister is running locally"
                           " with the controller, then it does not need to send"
                           " data to the tool data sink since it can access the"
                           " ${benchmark_run_dir} and ${benchmark_results_dir}"
@@ -295,10 +295,10 @@ class ToolMeister(object):
         }
 
     If the Tool Meister is running on the same host as the pbench agent
-    controller, then the Tool Meister will write is data directly to the
+    controller, then the Tool Meister will write it's data directly to the
     ${benchmark_results_dir} using the controller's host name; if the Tool
-    Meister is running remotely, then it will use a temporary directory under
-    ${benchmark_run_dir}, and will send the data to the Tool Data Sink during
+    Meister is running remotely, then it will use a local temporary directory
+    to write it's data, and will send that data to the Tool Data Sink during
     the "send" phase.
     """
 
@@ -352,14 +352,14 @@ class ToolMeister(object):
         if self._controller != self._hostname:
             self._tmp_dir = Path(
                 tempfile.mkdtemp(
-                    dir=self._benchmark_run_dir,
+                    dir=os.environ.get("_PBENCH_TOOL_MEISTER_TMP", "/var/tmp"),
                     prefix=f"tm.{self._group}.{os.getpid()}.",
                 )
             )
         else:
             self._tmp_dir = None
-        # Now that we have subscribed the channel as specified in the params
-        # object, we need to pull off the first message, which is an
+        # Now that we have subscribed to the channel as specified in the
+        # params object, we need to pull off the first message, which is an
         # acknowledgement that we have properly subscribed.
         logger.debug("next")
         resp = next(self._chan)
@@ -383,7 +383,7 @@ class ToolMeister(object):
                 key in self._valid_states
             ), f"INTERNAL ERROR: invalid state transition entry, '{key}'"
             assert self._state_trans[key]["next"] in self._valid_states, (
-                "INTERANL ERROR: invalie state transition next entry for"
+                "INTERNAL ERROR: invalid state transition 'next' entry for"
                 f" '{key}', '{self._state_trans[key]['next']}'"
             )
         self._message_keys = frozenset(["directory", "group", "state"])
@@ -396,7 +396,12 @@ class ToolMeister(object):
         # they are successful before declaring that we are ready.
 
         # Tell the entity that started us who we are, indicating we're ready.
-        started_msg = dict(kind="tm", hostname=self._hostname, pid=os.getpid())
+        started_msg = dict(
+            kind="tm",
+            hostname=self._hostname,
+            pid=os.getpid(),
+            tmpdir=str(self._tmp_dir),
+        )
         logger.debug("publish *-start")
         self._rs.publish(
             f"{self._channel}-start", json.dumps(started_msg, sort_keys=True)
@@ -424,14 +429,15 @@ class ToolMeister(object):
         """
         data = None
         while not data:
-            if not data:
-                self.logger.debug("next")
-                try:
-                    payload = next(self._chan)
-                except Exception:
-                    self.logger.exception("Error fetch next piece of data")
-                else:
-                    self.logger.debug("next success")
+            self.logger.debug("next")
+            try:
+                payload = next(self._chan)
+            except Exception:
+                # FIXME: Add connection drop error handling, retry loop
+                # re-establishing a connection.
+                self.logger.exception("Error fetching 'next' data off channel")
+            else:
+                self.logger.debug("next success")
             try:
                 json_str = payload["data"].decode("utf-8")
                 data = json.loads(json_str)
@@ -518,11 +524,11 @@ class ToolMeister(object):
         The 'state' and 'group' values of the payload have already been
         validated before this "start tools" action is invoked.
 
-        If this Tool Miester instance is running on the same host as the
+        If this Tool Meister instance is running on the same host as the
         controller, we'll use the given "directory" argument directly for
         where tools will store their collected data.  When this Tool Meister
-        instance is remote, we'll use a temporary directory off of the
-        ${benchmark_run_dir} (self._benchmark_run_dir).
+        instance is remote, we'll use a temporary directory on that remote
+        host.
         """
         if self._running_tools or self._directory is not None:
             self.logger.error(
@@ -563,7 +569,9 @@ class ToolMeister(object):
         # 	done < "$tool_group_dir/$this_tool_file"
         # name="$this_tool_file"
         failures = 0
+        tool_cnt = 0
         for name, tool_opts in sorted(self._tools.items()):
+            tool_cnt += 1
             try:
                 tool = Tool(
                     name, self._group, tool_opts, self.pbench_bin, _dir, self.logger
@@ -577,7 +585,14 @@ class ToolMeister(object):
                 continue
             else:
                 self._running_tools[name] = tool
-        self._send_client_status("success")
+        if failures > 0:
+            if failures == tool_cnt:
+                msg = "failure"
+            else:
+                msg = f"{failures} of {tool_cnt} tools failed to start"
+            self._send_client_status(msg)
+        else:
+            self._send_client_status("success")
         return failures
 
     def _wait_for_tools(self):
@@ -820,11 +835,17 @@ class ToolMeister(object):
 
 
 def main(argv):
-    """Main program for the tool meister.
+    """Main program for the Tool Meister.
 
     This function is the simple driver for the tool meister behaviors,
-    handling setup of signals, Redis() client construction, loading and
-    validating parameters.
+    handling argument processing, logging setup, initial connection to
+    Redis(), fetch and validation of operational paramters from Redis(), and
+    then the daemonization of the ToolMeister operation.
+
+    Arguments:  argv - a list of parameters
+
+    Returns 0 on success, > 0 when an error occurs.
+
     """
     PROG = os.path.basename(argv[0])
     pbench_bin = os.path.dirname(os.path.dirname(argv[0]))
@@ -866,7 +887,7 @@ def main(argv):
         redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
     except Exception as e:
         logger.error(
-            "Unable to connect to redis server, %s:%s: %s", redis_host, redis_port, e
+            "Unable to construct Redis client, %s:%s: %s", redis_host, redis_port, e
         )
         return 3
 
@@ -891,6 +912,7 @@ def main(argv):
         redis_server.connection_pool.disconnect()
         del redis_server
 
+    ret_val = 0
     pidfile_name = f"{param_key}.pid"
     pfctx = pidfile.PIDFile(pidfile_name)
     with daemon.DaemonContext(
@@ -924,11 +946,15 @@ def main(argv):
             else:
                 logger.debug("constructed Redis() object")
 
+            # FIXME: we should establish signal handlers that do the following:
+            #   a. handle graceful termination (TERM, INT, QUIT)
+            #   b. log operational state (HUP maybe?)
+
             try:
                 tm = ToolMeister(pbench_bin, params, redis_server, logger)
             except Exception:
                 logger.exception(
-                    "Unable to re-construct the ToolMeister" ' object with parms, "%r"',
+                    "Unable to construct the ToolMeister object with params, %r",
                     params,
                 )
                 return 7
@@ -943,8 +969,8 @@ def main(argv):
                         failures = action(data)
                         if failures > 0:
                             logger.warning(
-                                "%d failures encountered for action, '%r',"
-                                " on data, '%r'",
+                                "%d failures encountered for action, %r,"
+                                " on data, %r",
                                 failures,
                                 action,
                                 data,
@@ -954,6 +980,7 @@ def main(argv):
                         terminate = True
             except Exception:
                 logger.exception("Unexpected error encountered")
+                ret_val = 8
             finally:
                 tm.cleanup()
         finally:
@@ -963,7 +990,7 @@ def main(argv):
             except Exception:
                 logger.exception("Failed to remove pid file %s", pidfile_name)
 
-    return 0
+    return ret_val
 
 
 if __name__ == "__main__":
