@@ -62,12 +62,9 @@
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/tm-mpstat-stop.err
 /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com/tm-mpstat-stop.out
 /var/tmp/pbench-test-utils/pbench/mock-run/tm
-/var/tmp/pbench-test-utils/pbench/mock-run/tm/Dockerfile
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/pbench-tool-data-sink.err
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/pbench-tool-data-sink.log
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/pbench-tool-data-sink.out
-/var/tmp/pbench-test-utils/pbench/mock-run/tm/prom.log
-/var/tmp/pbench-test-utils/pbench/mock-run/tm/prometheus.yml
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/redis.conf
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/redis.log
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/tm-default-testhost.example.com.log
@@ -86,9 +83,6 @@
 [debug][1900-01-01T00:00:00.000000] tool_opts: ""
 [info][1900-01-01T00:00:00.000000] "iostat" tool is now registered for host "testhost.example.com" in group "default"
 --- pbench.log file contents
-+++ mock-run/tm/Dockerfile file contents
-FROM prom/prometheus
-ADD prometheus.yml /etc/prometheus/--- mock-run/tm/Dockerfile file contents
 +++ mock-run/tm/pbench-tool-data-sink.err file contents
 Bottle v#.##.## server starting up (using DataSinkWsgiServer(handler_class=<class '__main__.DataSinkWsgiServer.__init__.<locals>.DataSinkWsgiRequestHandler'>))...
 Listening on http://localhost:8080/
@@ -104,19 +98,6 @@ INFO pbench-tool-data-sink main -- Remove pid file ... (pbench-tool-data-sink.pi
 --- mock-run/tm/pbench-tool-data-sink.log file contents
 +++ mock-run/tm/pbench-tool-data-sink.out file contents
 --- mock-run/tm/pbench-tool-data-sink.out file contents
-+++ mock-run/tm/prom.log file contents
-Prometheus launch aborted, no persistent tools registered--- mock-run/tm/prom.log file contents
-+++ mock-run/tm/prometheus.yml file contents
-global:
-  scrape_interval: 1s
-  evaluation_interval: 1s
-
-scrape_configs:
-  - job_name: 'prometheus'
-    static_configs:
-    - targets: ['localhost:9090']
-
---- mock-run/tm/prometheus.yml file contents
 +++ mock-run/tm/redis.conf file contents
 bind localhost
 daemonize yes

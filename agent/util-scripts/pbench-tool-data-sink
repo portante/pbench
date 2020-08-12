@@ -16,7 +16,6 @@ import os
 import socket
 import subprocess
 import shutil
-import tarfile
 import json
 import hashlib
 import tempfile
@@ -111,18 +110,42 @@ class DataSinkWsgiServer(ServerAdapter):
             self._server.shutdown()
 
 
-class PrometheusLauncher:
-    def __init__(self, config_data, benchmark_run_dir, host_tools_dict, logger):
+class BaseCollector:
+    allowed_tools = {"noop-collector": None}
+
+    def __init__(self, benchmark_run_dir, host_tools_dict, logger):
         self.run = None
-        self.config_data = config_data
-        self.benchmark_run_dir = benchmark_run_dir
+        self.benchmark_run_dir = str(benchmark_run_dir)
         self.host_tools_dict = host_tools_dict
         self.logger = logger
-        self.allowed_tools = {"node-exporter": "9100", "dcgm": "8000"}
-        self.volume = str(self.benchmark_run_dir) + "/prom_vol"
         self.abort_launch = True
 
     def launch(self):
+        pass
+
+    def terminate(self):
+        if self.abort_launch:
+            return 0
+
+        self.run.terminate()
+        self.run.wait()
+        return 1
+
+
+class PromCollector(BaseCollector):
+    allowed_tools = {"node-exporter": "9100", "dcgm": "8000"}
+
+    def __init__(self, benchmark_run_dir, host_tools_dict, logger):
+        super().__init__(benchmark_run_dir, host_tools_dict, logger)
+        self.volume = self.benchmark_run_dir + "/prom_vol"
+
+    def launch(self):
+
+        if self.host_tools_dict:
+            self.abort_launch = False
+        else:
+            return 0
+
         config = open("prometheus.yml", "w")
 
         config.write("global:\n  scrape_interval: 1s\n  evaluation_interval: 1s\n\n")
@@ -141,20 +164,14 @@ class PrometheusLauncher:
                 host_ip = host
 
             for tool in self.host_tools_dict[host]:
-                if tool in self.allowed_tools:
-                    self.abort_launch = False
-                    port = self.allowed_tools[tool]
-                    config.write(
-                        "  - job_name: '{}_{}'\n    static_configs:\n    - targets: ['{}:{}']\n\n".format(
-                            host_ip, tool, host_ip, port
-                        )
+                port = PromCollector.allowed_tools[tool]
+                config.write(
+                    "  - job_name: '{}_{}'\n    static_configs:\n    - targets: ['{}:{}']\n\n".format(
+                        host_ip, tool, host_ip, port
                     )
+                )
 
         config.close()
-
-        image = open("Dockerfile", "w")
-        image.write("FROM prom/prometheus\nADD prometheus.yml /etc/prometheus/")
-        image.close()
 
         prom_logs = open("prom.log", "w")
 
@@ -169,27 +186,21 @@ class PrometheusLauncher:
         )  # , stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
         prom_pull.wait()
 
-        args = ["podman", "build", "-t", "custom-prom", "-f", "./Dockerfile"]
-        build = subprocess.Popen(
-            args, stdout=prom_logs, stderr=prom_logs
-        )  # , stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-        build.wait()
-
         os.mkdir(self.volume)
         args = ["chmod", "777", self.volume]
         volume_dir = subprocess.Popen(args)
         volume_dir.wait()
 
-        # FIXME: drop image build above, and just map prometheus.yml to
-        # /etc/prometheus/ at run time.
         args = [
             "podman",
             "run",
             "-p",
             "9090:9090",
             "-v",
-            "{}:/prometheus:Z".format(self.volume),
-            "custom-prom",
+            f"{self.volume}:/prometheus:Z",
+            "-v",
+            f"{self.benchmark_run_dir}/tm/prometheus.yml:/etc/prometheus/prometheus.yml:Z",
+            "prom/prometheus",
         ]
         self.run = subprocess.Popen(
             args, stdout=prom_logs, stderr=prom_logs
@@ -200,21 +211,16 @@ class PrometheusLauncher:
         return 1
 
     def terminate(self):
-        if self.abort_launch:
+        if super().terminate() == 0:
             return 0
 
-        self.run.terminate()
-        self.run.wait()
         self.logger.debug("PROM TERMINATED")
 
-        self.logger.debug("BENCHMARK RUN DIR: " + str(self.benchmark_run_dir))
-
         os.mkdir(str(self.benchmark_run_dir) + "/prom_data")
-        data_tar = tarfile.open(
-            str(self.benchmark_run_dir) + "/prom_data/prometheus_data.tar.gz", "w:gz"
-        )
-        data_tar.add(self.volume, arcname=os.path.basename(self.volume))
-        data_tar.close()
+
+        args = ["tar", "-zcvf", f"{self.benchmark_run_dir}/prom_data/prometheus_data.tar.gz", "-C", f"{self.benchmark_run_dir}/", "prom_vol"]
+        data_store = subprocess.Popen(args)
+        data_store.wait()
 
         shutil.rmtree(self.volume)
 
@@ -243,7 +249,7 @@ class ToolDataSink(Bottle):
         self.tool_data_ctx = None
         self.directory = None
         self._data = None
-        self._tms_to_check_prom = []
+        self._prom_server = None
         self._tm_tracking = None
         self._lock = Lock()
         self._cv = Condition(lock=self._lock)
@@ -392,16 +398,36 @@ class ToolDataSink(Bottle):
             assert pids["ds"]["hostname"] == self._hostname, f"what? {pids['ds']!r}"
             for tm in pids["tm"]:
                 assert tm["kind"] == "tm", f"what? {tm!r}"
-                self._tms_to_check_prom.append(tm["hostname"])
                 if tm["hostname"] == self._hostname:
                     # The "localhost" tool meister instance does not send data
                     # to the tool data sink, it just writes it locally.
-                    continue
+                    #continue
+                    tm["posted"] = "n/a"
+                else:
                 # The `posted` field is "yes" to start (as set below),
                 # "waiting" when we transition to the "send" state, "yes" when
                 # we receive data from the target Tool Meister host, and set
                 # back to "dormant" again when we exit the "send" state.
-                tm["posted"] = "yes"
+                    tm["posted"] = "yes"
+                tm_name = tm["hostname"]
+                tools_json_str_raw = self.redis_server.get(
+                        f"tm-{self.tool_group}-{tm_name}"
+                )
+                tools_json_str = tools_json_str_raw.decode("utf-8")
+                tools = json.loads(tools_json_str)["tools"]
+                prom_tools = []
+                noop_tools = []
+                other_tools = []
+                for tool in tools:
+                    if tool in PromCollector.allowed_tools:
+                        prom_tools.append(tool)
+                    elif tool in BaseCollector.allowed_tools:
+                        noop_tools.append(tool)
+                    else:
+                        other_tools.append(tool)
+                tm["prom_tools"] = prom_tools
+                tm["noop_tools"] = noop_tools
+                tm["other_tools"] = other_tools
                 tms[tm["hostname"]] = tm
         return tms
 
@@ -418,6 +444,8 @@ class ToolDataSink(Bottle):
         done = False
         while not done:
             for hostname, tm in self._tm_tracking.items():
+                if tm["posted"] == "n/a":
+                    continue
                 if tm["posted"] == "waiting":
                     # Don't bother checking any other Tool Meister when we
                     # have at least one that has not sent any data.
@@ -445,6 +473,8 @@ class ToolDataSink(Bottle):
         if self._tm_tracking is None:
             return
         for hostname, tm in self._tm_tracking.items():
+            if tm["posted"] == "n/a":
+                continue
             assert (
                 tm["posted"] == curr
             ), f"_change_tm_tracking unexpected tm posted value, {tm!r}"
@@ -499,21 +529,21 @@ class ToolDataSink(Bottle):
         # Transition to "send" state should reset self._tm_tracking
         with self._lock:
             if self.state == "init":
-                host_tool_dict = {}
-                for tm in self._tms_to_check_prom:
-                    tools_json_str_raw = self.redis_server.get(
-                        f"tm-{self.tool_group}-{tm}"
+                prom_tool_dict = {}
+                for tm in self._tm_tracking:
+                    prom_tools = self._tm_tracking[tm]["prom_tools"]
+                    if len(prom_tools) > 0:
+                        prom_tool_dict[self._tm_tracking[tm]["hostname"]] = prom_tools
+                self.logger.debug(prom_tool_dict)
+
+                if prom_tool_dict:
+                    self._prom_server = PromCollector(
+                        self.benchmark_run_dir, prom_tool_dict, self.logger
                     )
-                    tools_json_str = tools_json_str_raw.decode("utf-8")
-                    tools = json.loads(tools_json_str)["tools"].keys()
-                    host_tool_dict[tm] = tools
-                self.logger.debug(host_tool_dict)
-                self.prom_server = PrometheusLauncher(
-                    None, self.benchmark_run_dir, host_tool_dict, self.logger
-                )
-                self.prom_server.launch()
+                    self._prom_server.launch()
             elif self.state == "end":
-                self.prom_server.terminate()
+                if self._prom_server:
+                    self._prom_server.terminate()
             elif self.state == "send":
                 self._change_tm_tracking("dormant", "waiting")
                 # The Tool Data Sink cannot send success until all the Tool
