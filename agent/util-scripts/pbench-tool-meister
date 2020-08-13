@@ -62,6 +62,9 @@ from pbench.server.utils import md5sum
 # Path to external tar executable.
 tar_path = None
 
+# FIXME: The client response channel should be in a shared constants module.
+client_channel = "tool-meister-client"
+
 
 class ToolException(Exception):
     pass
@@ -87,7 +90,6 @@ class Tool(object):
         self.screen_name = f"pbench-tool-{group}-{name}"
         self.start_process = None
         self.stop_process = None
-        self.post_process = None
 
     def _check_no_processes(self):
         if self.start_process is not None:
@@ -97,10 +99,6 @@ class Tool(object):
         if self.stop_process is not None:
             raise ToolException(
                 f"Tool({self.name}) has an unexpected stop process running"
-            )
-        if self.post_process is not None:
-            raise ToolException(
-                f"Tool({self.name}) has an unexpected post-process process running"
             )
 
     def start(self):
@@ -130,10 +128,6 @@ class Tool(object):
         if self.stop_process is not None:
             raise ToolException(
                 f"Tool({self.name}) has an unexpected stop process running"
-            )
-        if self.post_process is not None:
-            raise ToolException(
-                f"Tool({self.name}) has an unexpected post-process process running"
             )
 
         # FIXME - before we "stop" a tool, check to see if a
@@ -172,18 +166,12 @@ class Tool(object):
         completed.
 
         Waits for the tool's "stop" process to complete, if started, then
-        waits for the tool's start process to complete. Finally, if there is a
-        post-processing process running, wait for that to complete before
-        returning.
+        waits for the tool's start process to complete.
         """
         if self.stop_process is not None:
             if self.start_process is None:
                 raise ToolException(
                     f"Tool({self.name}) does not have a start process running"
-                )
-            if self.post_process is not None:
-                raise ToolException(
-                    f"Tool({self.name}) has an unexpected post-process process running"
                 )
             self.logger.info("waiting for stop %s", self.name)
             # We wait for the stop process to finish first ...
@@ -192,41 +180,8 @@ class Tool(object):
             # ... then we wait for the start process to finish
             self.start_process.wait()
             self.start_process = None
-        elif self.post_process is not None:
-            if self.start_process is not None:
-                raise ToolException(
-                    f"Tool({self.name}) has an unexpected start process running"
-                )
-            if self.stop_process is not None:
-                raise ToolException(
-                    f"Tool({self.name}) has an unexpected stop process running"
-                )
-            self.logger.info("waiting for post-process %s", self.name)
-            self.post_process.wait()
-            self.post_process = None
         else:
-            raise ToolException(
-                f"Tool({self.name}) wait not called after 'stop' or 'post-process'"
-            )
-
-    def postprocess(self):
-        """Run the tool's "post-process" action in the background.
-        """
-        self._check_no_processes()
-        # $pbench_bin/tool-scripts/$name --postprocess --dir=$dir "${tool_opts[@]}"
-        args = [
-            f"{self.pbench_bin}/tool-scripts/{self.name}",
-            "--postprocess",
-            f"--dir={self.tool_dir}",
-            self.tool_opts,
-        ]
-        self.logger.info("%s: post-process_tool -- %s", self.name, " ".join(args))
-        o_file = self.tool_dir / f"tm-{self.name}-postprocess.out"
-        e_file = self.tool_dir / f"tm-{self.name}-postprocess.err"
-        with o_file.open("w") as ofp, e_file.open("w") as efp:
-            self.post_process = subprocess.Popen(
-                args, stdin=None, stdout=ofp, stderr=efp
-            )
+            raise ToolException(f"Tool({self.name}) wait not called after 'stop'")
 
 
 class Terminate(Exception):
@@ -346,18 +301,6 @@ class ToolMeister(object):
         logger.debug("listen")
         self._chan = self._pubsub.listen()
         logger.debug("done listening")
-        # Name of the temporary tool data directory to use when invoking
-        # tools.  This is a local temporary directory when the Tool Meister is
-        # remote from the pbench controller.
-        if self._controller != self._hostname:
-            self._tmp_dir = Path(
-                tempfile.mkdtemp(
-                    dir=os.environ.get("_PBENCH_TOOL_MEISTER_TMP", "/var/tmp"),
-                    prefix=f"tm.{self._group}.{os.getpid()}.",
-                )
-            )
-        else:
-            self._tmp_dir = None
         # Now that we have subscribed to the channel as specified in the
         # params object, we need to pull off the first message, which is an
         # acknowledgement that we have properly subscribed.
@@ -374,15 +317,18 @@ class ToolMeister(object):
         self.state = "start"
         self._state_trans = {
             "start": {"next": "stop", "action": self.start_tools},
-            "stop": {"next": "send", "action": self.stop_tools},
-            "send": {"next": "start", "action": self.send_tools},
+            "stop": {"next": "start", "action": self.stop_tools},
+            "send": {"next": None, "action": self.send_tools},
         }
         self._valid_states = frozenset(["start", "stop", "send", "terminate"])
         for key in self._state_trans.keys():
             assert (
                 key in self._valid_states
             ), f"INTERNAL ERROR: invalid state transition entry, '{key}'"
-            assert self._state_trans[key]["next"] in self._valid_states, (
+            assert (
+                self._state_trans[key]["next"] is None
+                or self._state_trans[key]["next"] in self._valid_states
+            ), (
                 "INTERNAL ERROR: invalid state transition 'next' entry for"
                 f" '{key}', '{self._state_trans[key]['next']}'"
             )
@@ -391,17 +337,20 @@ class ToolMeister(object):
         # until a 'start tools' is executed, cleared when a 'send tools'
         # completes.
         self._directory = None
+        # The dictionary we use to track the directories which have not been
+        # sent to the Tool Data Sink.
+        self.directories = dict()
+        # The "tool directory" is the current directory in use by running
+        # tools for storing their collected data.
+        self._tool_dir = None
+        # The temporary directory to use for capturing all tool data.
+        self._tmp_dir = os.environ.get("_PBENCH_TOOL_MEISTER_TMP", "/var/tmp")
 
         # FIXME: run all the "--install" commands for the tools to ensure
         # they are successful before declaring that we are ready.
 
         # Tell the entity that started us who we are, indicating we're ready.
-        started_msg = dict(
-            kind="tm",
-            hostname=self._hostname,
-            pid=os.getpid(),
-            tmpdir=str(self._tmp_dir),
-        )
+        started_msg = dict(kind="tm", hostname=self._hostname, pid=os.getpid())
         logger.debug("publish *-start")
         self._rs.publish(
             f"{self._channel}-start", json.dumps(started_msg, sort_keys=True)
@@ -416,9 +365,6 @@ class ToolMeister(object):
         self._pubsub.unsubscribe()
         self.logger.debug("pubsub close")
         self._pubsub.close()
-        if self._tmp_dir is not None:
-            shutil.rmtree(self._tmp_dir)
-            self._tmp_dir = None
 
     def _get_data(self):
         """_get_data - fetch and decode the JSON object off the "wire".
@@ -479,17 +425,26 @@ class ToolMeister(object):
         while data["state"] != self.state:
             if data["state"] == "terminate":
                 raise Terminate()
+            if data["state"] == "send":
+                break
             self.logger.info(
                 "ignoring unexpected data, %r, expecting state %s", data, self.state
             )
             data = self._get_data()
-        state_rec = self._state_trans[self.state]
+        state_rec = self._state_trans[data["state"]]
         action = state_rec["action"]
-        self.state = state_rec["next"]
+        if state_rec["next"] is not None:
+            self.state = state_rec["next"]
         self.logger.debug("%s: msg - %r", self._hostname, data)
         return action, data
 
     def _send_client_status(self, status):
+        """_send_client_status - convenience method to properly publish a
+        client operation status.
+
+        Return 0 on success, 1 on failure, logging errors or exceptions
+        encountered during its operation.
+        """
         # The published client status message contains three pieces of
         # information:
         #   {
@@ -501,7 +456,7 @@ class ToolMeister(object):
         self.logger.debug("publish tmc")
         try:
             num_present = self._rs.publish(
-                "tool-meister-client", json.dumps(msg, sort_keys=True)
+                client_channel, json.dumps(msg, sort_keys=True)
             )
         except Exception:
             self.logger.exception("Failed to publish client status message")
@@ -532,9 +487,10 @@ class ToolMeister(object):
         """
         if self._running_tools or self._directory is not None:
             self.logger.error(
-                "INTERNAL ERROR - encountered previously running tools, '%r'",
+                "INTERNAL ERROR - encountered previously running tools, %r",
                 self._running_tools,
             )
+            self._send_client_status("internal-error")
             return False
 
         # script_path=`dirname $0`
@@ -542,21 +498,41 @@ class ToolMeister(object):
         # pbench_bin="`cd ${script_path}/..; /bin/pwd`"
         # action=`echo ${script_name#pbench-} | awk -F- '{print $1}'`
         # dir=${1}; shift (-d|--dir)
-        if self._tmp_dir:
-            _dir = self._tmp_dir
-        else:
+
+        # Name of the temporary tool data directory to use when invoking
+        # tools.  This is a local temporary directory when the Tool Meister is
+        # remote from the pbench controller.
+        if self._controller == self._hostname:
+            # This is the case when the Tool Meister instance is running on
+            # the same host as the controller.  We just use the directory
+            # given to us in the `start` message.
             try:
                 _dir = Path(data["directory"]).resolve(strict=True)
             except Exception:
                 self.logger.exception(
                     "Failed to access provided result directory, %s", data["directory"]
                 )
+                self._send_client_status("internal-error")
                 return False
-        _dir = _dir / self._hostname
+        else:
+            try:
+                _dir = Path(
+                    tempfile.mkdtemp(
+                        dir=self._tmp_dir, prefix=f"tm.{self._group}.{os.getpid()}."
+                    )
+                )
+            except Exception:
+                self.logger.exception(
+                    "Failed to create temporary directory for start operation"
+                )
+                self._send_client_status("internal-error")
+                return False
+        self._tool_dir = _dir / self._hostname
         try:
-            _dir.mkdir()
+            self._tool_dir.mkdir()
         except Exception:
             self.logger.exception("Failed to create local result directory, %s", _dir)
+            self._send_client_status("internal-error")
             return False
         self._directory = data["directory"]
 
@@ -574,7 +550,12 @@ class ToolMeister(object):
             tool_cnt += 1
             try:
                 tool = Tool(
-                    name, self._group, tool_opts, self.pbench_bin, _dir, self.logger
+                    name,
+                    self._group,
+                    tool_opts,
+                    self.pbench_bin,
+                    self._tool_dir,
+                    self.logger,
                 )
                 tool.start()
             except Exception:
@@ -641,8 +622,7 @@ class ToolMeister(object):
                 tool = self._running_tools[name]
             except KeyError:
                 self.logger.error(
-                    "INTERNAL ERROR - tool %s not found in list of running" " tools",
-                    name,
+                    "INTERNAL ERROR - tool %s not found in list of running tools", name,
                 )
                 failures += 1
                 continue
@@ -655,14 +635,31 @@ class ToolMeister(object):
                 failures += 1
         failures += self._wait_for_tools()
 
+        # Clean up the running tools data structure explicitly ahead of
+        # potentially receiving another start tools.
+        for name in sorted(self._tools.keys()):
+            try:
+                del self._running_tools[name]
+            except KeyError:
+                self.logger.error(
+                    "INTERNAL ERROR - tool %s not found in list of running tools", name,
+                )
+                failures += 1
+                continue
+
+        # Remember this tool directory so that we can send its data when
+        # requested.
+        self.directories[self._directory] = self._tool_dir
+        self._directory = None
+        self._tool_dir = None
+
         self._send_client_status(
             "success" if failures == 0 else "failures stopping tools"
         )
         return failures
 
     def send_tools(self, data):
-        """send_tools - post-process and send any collected tool data to the
-        tool data sink.
+        """send_tools - send any collected tool data to the tool data sink.
 
         The 'state' and 'group' values of the payload have already been
         validated before this "send tools" action is invoked.
@@ -671,162 +668,180 @@ class ToolMeister(object):
         payload matches what was previously provided to a "start tools"
         action.
         """
-        if self._directory != data["directory"]:
+        directory = data["directory"]
+        if self._hostname == self._controller:
+            try:
+                _dir = self.directories[directory]
+            except KeyError:
+                self.logger.error(
+                    "INTERNAL ERROR - send tools action encountered for a"
+                    " directory, '%s', that is different from any previous"
+                    " start tools directory, %r",
+                    directory,
+                    self.directories.keys(),
+                )
+                self._send_client_status("internal-error")
+                return 1
+            else:
+                del self.directories[directory]
+                self.logger.info(
+                    "%s: send_tools (no-op) %s %s", self._hostname, self._group, _dir,
+                )
+                # Note that we don't have a directory to send when a Tool
+                # Meister runs on the same host as the controller.
+                self._send_client_status("success")
+                return 0
+
+        try:
+            tool_dir = self.directories[directory]
+        except KeyError:
             self.logger.error(
                 "INTERNAL ERROR - send tools action encountered for a"
-                " directory, '%s', that is different from the previous"
-                " start tools, '%s'",
-                data["directory"],
-                self._directory,
+                " directory, '%s', that is different from any previous"
+                " start tools directory, %r",
+                directory,
+                self.directories.keys(),
             )
+            self._send_client_status("internal-error")
             return False
+        else:
+            assert tool_dir.name == self._hostname, (
+                f"Logic Bomb! Final path component of the tool directory is"
+                f" '{tool_dir.name}', not our host name '{self._hostname}'"
+            )
 
         failures = 0
-        for name in sorted(self._tools.keys()):
-            try:
-                tool = self._running_tools[name]
-            except KeyError:
-                self.logger.error(
-                    "INTERNAL ERROR - tool %s not found in list of running" " tools",
-                    name,
+        parent_dir = tool_dir.parent
+        tar_file = parent_dir / f"{self._hostname}.tar.xz"
+        o_file = parent_dir / f"{self._hostname}.tar.out"
+        e_file = parent_dir / f"{self._hostname}.tar.err"
+        try:
+            # Invoke tar directly for efficiency.
+            with o_file.open("w") as ofp, e_file.open("w") as efp:
+                cp = subprocess.run(
+                    [tar_path, "-Jcf", tar_file, self._hostname],
+                    cwd=parent_dir,
+                    stdin=None,
+                    stdout=ofp,
+                    stderr=efp,
                 )
-                failures += 1
-                continue
-            try:
-                tool.postprocess()
-            except Exception:
-                self.logger.exception("Failed to post-process tool %s data", name)
-                failures += 1
-        failures += self._wait_for_tools()
-        for name in sorted(self._tools.keys()):
-            try:
-                del self._running_tools[name]
-            except KeyError:
-                self.logger.error(
-                    "INTERNAL ERROR - tool %s not found in list of running" " tools",
-                    name,
-                )
-                failures += 1
-                continue
-
-        if self._hostname == self._controller:
-            self.logger.info(
-                "%s: send_tools (no-op) %s %s",
-                self._hostname,
-                self._group,
-                self._directory,
-            )
+        except Exception:
+            self.logger.exception("Failed to create tools tar ball '%s'", tar_file)
         else:
-            tar_file = self._tmp_dir / f"{self._hostname}.tar.xz"
-            o_file = self._tmp_dir / f"{self._hostname}.tar.out"
-            e_file = self._tmp_dir / f"{self._hostname}.tar.err"
             try:
-                # Invoke tar directly for efficiency.
-                with o_file.open("w") as ofp, e_file.open("w") as efp:
-                    cp = subprocess.run(
-                        [tar_path, "-Jcf", tar_file, self._hostname],
-                        cwd=self._tmp_dir,
-                        stdin=None,
-                        stdout=ofp,
-                        stderr=efp,
+                if cp.returncode != 0:
+                    self.logger.error(
+                        "Failed to create tools tar ball; return code: %d",
+                        cp.returncode,
                     )
-            except Exception:
-                self.logger.exception("Failed to create tools tar ball '%s'", tar_file)
-            else:
-                try:
-                    if cp.returncode != 0:
-                        self.logger.error(
-                            "Failed to create tools tar ball; return code: %d",
-                            cp.returncode,
+                    failures += 1
+                else:
+                    try:
+                        tar_md5 = md5sum(tar_file)
+                    except Exception:
+                        self.logger.exception(
+                            "Failed to read tools tar ball, '%s'", tar_file
                         )
                         failures += 1
                     else:
                         try:
-                            tar_md5 = md5sum(tar_file)
-                        except Exception:
-                            self.logger.exception(
-                                "Failed to read tools tar ball, '%s'", tar_file
+                            o_file.unlink()
+                        except Exception as exc:
+                            self.logger.warning(
+                                "Failure removing tar command output file, %s: %s",
+                                o_file,
+                                exc,
                             )
-                            failures += 1
-                        else:
-                            self.logger.info(
-                                "%s: send_tools %s %s",
-                                self._hostname,
-                                self._group,
-                                self._directory,
+                        try:
+                            e_file.unlink()
+                        except Exception as exc:
+                            self.logger.warning(
+                                "Failure removing tar command output file, %s: %s",
+                                e_file,
+                                exc,
                             )
-                            headers = {"md5sum": tar_md5}
-                            directory_bytes = data["directory"].encode("utf-8")
-                            tool_data_ctx = hashlib.md5(directory_bytes).hexdigest()
-                            url = f"http://{self._controller}:8080/tool-data/{tool_data_ctx}/{self._hostname}"
-                            sent = False
-                            retries = 200
-                            while not sent:
-                                try:
-                                    with tar_file.open("rb") as tar_fp:
-                                        response = requests.put(
-                                            url, headers=headers, data=tar_fp
-                                        )
-                                except (
-                                    ConnectionRefusedError,
-                                    requests.exceptions.ConnectionError,
-                                ) as exc:
-                                    self.logger.debug("%s", exc)
-                                    # Try until we get a connection.
-                                    time.sleep(0.1)
-                                    retries -= 1
-                                    if retries <= 0:
-                                        raise
+
+                        self.logger.debug(
+                            "%s: starting send_tools %s %s",
+                            self._hostname,
+                            self._group,
+                            self._directory,
+                        )
+                        headers = {"md5sum": tar_md5}
+                        directory_bytes = data["directory"].encode("utf-8")
+                        tool_data_ctx = hashlib.md5(directory_bytes).hexdigest()
+                        url = f"http://{self._controller}:8080/tool-data/{tool_data_ctx}/{self._hostname}"
+                        sent = False
+                        retries = 200
+                        while not sent:
+                            try:
+                                with tar_file.open("rb") as tar_fp:
+                                    response = requests.put(
+                                        url, headers=headers, data=tar_fp
+                                    )
+                            except (
+                                ConnectionRefusedError,
+                                requests.exceptions.ConnectionError,
+                            ) as exc:
+                                self.logger.debug("%s", exc)
+                                # Try until we get a connection.
+                                time.sleep(0.1)
+                                retries -= 1
+                                if retries <= 0:
+                                    raise
+                            else:
+                                sent = True
+                                if response.status_code != 200:
+                                    self.logger.error(
+                                        "PUT '%s' failed with '%d', '%s'",
+                                        url,
+                                        response.status_code,
+                                        response.text,
+                                    )
+                                    failures += 1
                                 else:
-                                    sent = True
-                                    if response.status_code != 200:
-                                        self.logger.error(
-                                            "PUT '%s' failed with '%d', '%s'",
-                                            url,
-                                            response.status_code,
-                                            response.text,
+                                    self.logger.debug(
+                                        "PUT '%s' succeeded ('%d', '%s')",
+                                        url,
+                                        response.status_code,
+                                        response.text,
+                                    )
+                                    try:
+                                        shutil.rmtree(parent_dir)
+                                    except Exception:
+                                        self.logger.exception(
+                                            "Failed to remove tool data hierarchy, '%s'",
+                                            parent_dir,
                                         )
                                         failures += 1
                                     else:
-                                        self.logger.debug(
-                                            "PUT '%s' succeeded ('%d', '%s')",
-                                            url,
-                                            response.status_code,
-                                            response.text,
-                                        )
-                                        try:
-                                            shutil.rmtree(
-                                                self._tmp_dir / self._hostname
-                                            )
-                                        except Exception:
-                                            self.logger.exception(
-                                                "Failed to remove tool data hierarchy, '%s'",
-                                                self._tmp_dir / self._hostname,
-                                            )
-                                            failures += 1
-                            self.logger.debug(
-                                "%s: send_tools completed",
-                                self._hostname,
-                                self._group,
-                                self._directory,
-                            )
-                except Exception:
-                    self.logger.exception("Unexpected error encountered")
-            finally:
-                try:
-                    tar_file.unlink()
-                except OSError as exc:
-                    if exc.errno != errno.ENOENT:
-                        self.logger.warning(
-                            "error removing tools tar ball, '%s': %s", tar_file, exc
+                                        del self.directories[directory]
+                        self.logger.info(
+                            "%s: send_tools completed %s %s",
+                            self._hostname,
+                            self._group,
+                            tool_dir,
                         )
-                except Exception as exc:
+            except Exception:
+                self.logger.exception("Unexpected error encountered")
+        finally:
+            # We always remove the created tar file regardless of success or
+            # failure. The above code should take care of removing the
+            # directory tree the tar file was created from when it was
+            # successfully transferred, but if the transfer failed, we'll
+            # still have the local directory, so the tar file is still
+            # deletable.
+            try:
+                tar_file.unlink()
+            except OSError as exc:
+                if exc.errno != errno.ENOENT:
                     self.logger.warning(
-                        "unexpected error removing tools tar ball, '%s': %s",
-                        tar_file,
-                        exc,
+                        "error removing tools tar ball, '%s': %s", tar_file, exc
                     )
-        self._directory = None
+            except Exception as exc:
+                self.logger.warning(
+                    "unexpected error removing tools tar ball, '%s': %s", tar_file, exc,
+                )
 
         self._send_client_status(
             "success" if failures == 0 else "failures sending tool data"

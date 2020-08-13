@@ -4,19 +4,12 @@
 script_path="$(dirname ${0})"
 script_name="$(basename ${0})"
 pbench_bin="$(realpath -e ${script_path}/..)"
-_suffix=${script_name#pbench-}
-action=${_suffix%%-*}
 
 # source the base script
 . "${pbench_bin}"/base
 
-if [[ "${action}" != "start" && "${action}" != "stop" && "${action}" != "postprocess" && "${action}" != "kill" ]]; then
-	error_log "[${script_name}] action \"${action}\" is not supported"
-	exit 1
-fi
-
-# This script will $action all tools that belong to a specific group.  This is
-# typically called by a benchmark script when some activity needs to
+# This script will post-process all tools that belong to a specific group.
+# This is typically called by a benchmark script when some activity needs to
 # monitored.
 
 # Defaults
@@ -76,13 +69,42 @@ if [[ ${?} -ne 0 || -z "${tool_group_dir}" ]]; then
 	exit 1
 fi
 
-if [[ "${action}" == "kill" ]]; then
-	_msg="pbench-kill-tools is a no-op and has been deprecated: pbench-stop-tools ensures tools are properly cleaned up."
-	printf -- "%s\n" "${_msg}"
-	log "${_msg}"
-	exit 0
-fi
+let failures=0
+for dirent in $(/bin/ls -1 ${tool_group_dir}); do
+        if [[ "${dirent}" == "__trigger__" ]]; then
+		# Ignore trigger files
+		continue
+	elif [[ ! -d ${tool_group_dir}/${dirent} ]]; then
+		# Skip spurious files of ${tool_group_dir}
+		warn_log "[${script_name}] \"${this_tool_file}\" is a file in \"${tool_group_dir}\"; that should not happen. Please consider deleting it."
+		continue
+	fi
+	# FIXME: add support for label applied to the hostname directory.
+	tool_output_dir="${dir}/${dirent}"
+	if [[ -d "${tool_output_dir}" ]]; then
+		for filent in $(/bin/ls -1 ${tool_group_dir}/${dirent}); do
+        		if [[ ! -f "${tool_group_dir}/${dirent}/${filent}" ]]; then
+				# Ignore unrecognized directories or symlinks
+				continue
+			fi
+        		if [[ "${filent}" == "__label__" ]]; then
+				# Ignore label files
+				continue
+			fi
+			if [[ ! -x ${pbench_bin}/tool-scripts/${filent} ]]; then
+				# Ignore unrecognized tools
+				continue
+			fi
+			${pbench_bin}/tool-scripts/${filent} --postprocess --dir=${tool_output_dir} "${tool_opts[@]}" >> ${tool_output_dir}/postprocess.log 2>&1
+			if [[ ${?} -ne 0 ]]; then
+				cat ${tool_output_dir}/postprocess.log >&2
+				(( failures++ ))
+			fi
+		done
+	else
+		warn_log "[${script_name}] Missing tool output directory, '${tool_output_dir}'"
+		(( failures++ ))
+	fi
+done
 
-# Tell the tool meister to take the requested action.
-pbench-tool-meister-client "${group}" "${dir}" "${action}"
-exit ${?}
+exit ${failures}

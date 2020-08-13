@@ -24,7 +24,7 @@ tm_channel = "tool-meister-chan"
 cl_channel = "tool-meister-client"
 
 # List of allowed operations
-allowed_operations = ("start", "stop", "send", "postprocess", "kill")
+allowed_operations = ("start", "stop", "send", "kill")
 
 
 def main(argv):
@@ -62,9 +62,6 @@ def main(argv):
                 "Unrecognized operation, '{}', allowed operations are:"
                 " {}".format(operation, allowed_operations)
             )
-        elif operation == "postprocess":
-            # We map the legacy "postprocess" action to the new "send" action.
-            operation = "send"
         elif operation == "kill":
             # FIXME: we need to implement the gritty method of killing all the
             # tool meisters, locally and remotely, and ensuring they are all
@@ -136,7 +133,7 @@ def main(argv):
 
     # The published message contains three pieces of information:
     #   {
-    #     "state": "< 'start' | 'stop' | 'send' | 'postprocess' | 'kill' >",
+    #     "state": "< 'start' | 'stop' | 'send' | 'kill' >",
     #     "group": "< the tool group name for the tools to operate on >",
     #     "directory": "< the local directory path to store collected data >"
     #   }

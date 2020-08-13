@@ -5,7 +5,7 @@ starting tool data sink
 starting localhost tool meister
 waiting for all successfully spawned SSH processes to show up as subscribers
 channel payload, "'{"hostname": "testhost.example.com", "kind": "ds", "pid": NNNNN}'"
-channel payload, "'{"hostname": "testhost.example.com", "kind": "tm", "pid": NNNNN, "tmpdir": "None"}'"
+channel payload, "'{"hostname": "testhost.example.com", "kind": "tm", "pid": NNNNN}'"
 --- Finished test-52 test-start-stop-tool-meister (status=0)
 +++ pbench tree state
 /var/tmp/pbench-test-utils/pbench

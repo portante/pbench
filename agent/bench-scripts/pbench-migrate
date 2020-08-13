@@ -274,7 +274,7 @@ function do_migrate() {
 		ssh $ssh_opts $dest_host virsh define /tmp/$vm.xml
 	else
 		# start qemu in listen mode on dest host
-		echo creating VM on destination hosyt using qemu
+		echo creating VM on destination host using qemu
 		qemu_cmd=`ssh $src_host "ps -C qemu-system-x86 -o command | tail -1"`
 		echo Starting qemu on $dest_host | tee -a $benchmark_results_dir/result.txt
 		echo qemu command: $qemu_cmd | tee -a $benchmark_results_dir/result.txt
@@ -286,12 +286,10 @@ function do_migrate() {
 		fi
 	fi
 
-	# migrate
 	echo "Sleeping for $seconds_before_migrate seconds before starting migration..." | tee -a $benchmark_results_dir/result.txt
 	sleep $seconds_before_migrate
-	local iteration_path=$(dirname "${benchmark_results_dir}")
-	local iteration_name=$(basename "${iteration_path}")
-	local sample_name=$(basename "${benchmark_results_dir}")
+
+	# migrate
 	pbench-start-tools --group=${tool_group} --dir=${benchmark_results_dir}
 	if [ "$use_libvirt" == "y" ]; then
 		if [ ! -z "$dest_ipaddr" ]; then
@@ -408,12 +406,11 @@ for postprocess_dir in $postprocess_dirs; do
 		warn_log "Encountered a mis-named directory to post-process, ${postprocess_dir}"
 	fi
 	iteration_path=$(dirname "${postprocess_dir}")
-	iteration_name=$(basename "${iteration_path}")
-	sample_name=$(basename "${postprocess_dir}")
-	# FIXME - With Tool Meister this won't work because post-processing dis-joint from
-	# the start / stop cycle is not supported.
-	pbench-postprocess-tools --group=${tool_group} --dir=${postprocess_dir} &
 	ln -s sample1 ${iteration_path}/reference-result
+	# We request all remote Tool Meisters send the data for a given iteration
+	# sequentially, but we'll post-process the data in parallel.
+	pbench-send-tools --group=${tool_group} --dir=${postprocess_dir}
+	pbench-postprocess-tools --group=${tool_group} --dir=${postprocess_dir} &
 done
 wait
 

@@ -182,6 +182,7 @@ for runtime in `echo $runtimes | sed -e s/,/" "/g`; do
 	pbench-start-tools --group=$tool_group --dir=$benchmark_results_dir
 	$benchmark_cmd_file | tee $result_file
 	pbench-stop-tools --group=$tool_group --dir=$benchmark_results_dir
+	pbench-send-tools --group=$tool_group --dir=$benchmark_results_dir
 	pbench-postprocess-tools --group=$tool_group --dir=$benchmark_results_dir
 	ln -s ${sample} ${benchmark_run_dir}/${iteration}/reference-result
 	min=`grep "Min Latencies:" $result_file | awk '{print $4}'`

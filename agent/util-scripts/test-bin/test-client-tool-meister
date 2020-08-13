@@ -69,62 +69,50 @@ if [[ ${status} -ne 0 ]]; then
 fi
 
 sample="sample42"
-iteration="0-iter-zero"
+iterations="0-iter-zero 1-iter-one"
 
-benchmark_results_dir="${benchmark_run_dir}/${iteration}/${sample}"
-tools_dir="${benchmark_results_dir}/tools-${group}"
-mkdir -p ${tools_dir}
-status=${?}
-if [[ ${status} -ne 0 ]]; then
-    printf -- "ERROR - failed to create tool directory, '%s' (exit code: %s)\n" "${tools_dir}" "${status}" >&2
-    exit 1
-fi
-_timeout pbench-start-tools --group="${group}" --dir="${tools_dir}"
-status=${?}
-if [[ ${status} -ne 0 ]]; then
-    printf -- "ERROR - \"pbench-start-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
-    exit 1
-fi
-_timeout pbench-stop-tools --group="${group}" --dir="${tools_dir}"
-status=${?}
-if [[ ${status} -ne 0 ]]; then
-    printf -- "ERROR - \"pbench-stop-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
-    exit 1
-fi
-_timeout pbench-postprocess-tools --group="${group}" --dir="${tools_dir}"
-status=${?}
-if [[ ${status} -ne 0 ]]; then
-    printf -- "ERROR - \"pbench-postprocess-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
-    exit 1
-fi
+for iteration in ${iterations}; do
+    benchmark_results_dir="${benchmark_run_dir}/${iteration}/${sample}"
+    tools_dir="${benchmark_results_dir}/tools-${group}"
+    mkdir -p ${tools_dir}
+    status=${?}
+    if [[ ${status} -ne 0 ]]; then
+        printf -- "ERROR - failed to create tool directory, '%s' (exit code: %s)\n" "${tools_dir}" "${status}" >&2
+        exit 1
+    fi
+    _timeout pbench-start-tools --group="${group}" --dir="${tools_dir}"
+    status=${?}
+    if [[ ${status} -ne 0 ]]; then
+        printf -- "ERROR - \"pbench-start-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
+        exit 1
+    fi
+    _timeout pbench-stop-tools --group="${group}" --dir="${tools_dir}"
+    status=${?}
+    if [[ ${status} -ne 0 ]]; then
+        printf -- "ERROR - \"pbench-stop-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
+        exit 1
+    fi
+    if [[ "${3}" != "delayed-send" ]]; then
+        _timeout pbench-send-tools --group="${group}" --dir="${tools_dir}"
+        status=${?}
+        if [[ ${status} -ne 0 ]]; then
+            printf -- "ERROR - \"pbench-send-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
+            exit 1
+        fi
+    fi
+done
 
-iteration="1-iter-one"
-
-benchmark_results_dir="${benchmark_run_dir}/${iteration}/${sample}"
-tools_dir="${benchmark_results_dir}/tools-${group}"
-mkdir -p ${tools_dir}
-status=${?}
-if [[ ${status} -ne 0 ]]; then
-    printf -- "ERROR - failed to create tool directory, '%s' (exit code: %s)\n" "${tools_dir}" "${status}" >&2
-    exit 1
-fi
-_timeout pbench-start-tools --group="${group}" --dir="${tools_dir}"
-status=${?}
-if [[ ${status} -ne 0 ]]; then
-    printf -- "ERROR - \"pbench-start-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
-    exit 1
-fi
-_timeout pbench-stop-tools --group="${group}" --dir="${tools_dir}"
-status=${?}
-if [[ ${status} -ne 0 ]]; then
-    printf -- "ERROR - \"pbench-stop-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
-    exit 1
-fi
-_timeout pbench-postprocess-tools --group="${group}" --dir="${tools_dir}"
-status=${?}
-if [[ ${status} -ne 0 ]]; then
-    printf -- "ERROR - \"pbench-postprocess-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
-    exit 1
+if [[ "${3}" == "delayed-send" ]]; then
+    for iteration in ${iterations}; do
+        benchmark_results_dir="${benchmark_run_dir}/${iteration}/${sample}"
+        tools_dir="${benchmark_results_dir}/tools-${group}"
+        _timeout pbench-send-tools --group="${group}" --dir="${tools_dir}"
+        status=${?}
+        if [[ ${status} -ne 0 ]]; then
+            printf -- "ERROR - \"pbench-send-tools\" failed to execute successfully (exit code: %s)\n" "${status}" >&2
+            exit 1
+        fi
+    done
 fi
 
 _timeout pbench-tool-meister-stop

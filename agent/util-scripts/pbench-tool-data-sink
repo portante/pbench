@@ -281,11 +281,10 @@ class ToolDataSink(Bottle):
                     # The "localhost" tool meister instance does not send data
                     # to the tool data sink, it just writes it locally.
                     continue
-                # The `posted` field is "yes" to start (as set below),
-                # "waiting" when we transition to the "send" state, "yes" when
-                # we receive data from the target Tool Meister host, and set
-                # back to "dormant" again when we exit the "send" state.
-                tm["posted"] = "yes"
+                # The `posted` field is "dormant" to start (as set below),
+                # "waiting" when we transition to the "send" state, "dormant"
+                # when we receive data from the target Tool Meister host.
+                tm["posted"] = "dormant"
                 tms[tm["hostname"]] = tm
         return tms
 
@@ -306,7 +305,7 @@ class ToolDataSink(Bottle):
                     # Don't bother checking any other Tool Meister when we
                     # have at least one that has not sent any data.
                     break
-                assert tm["posted"] == "yes", f"Logic bomb! {tm['posted']!r}"
+                assert tm["posted"] == "dormant", f"Logic bomb! {tm['posted']!r}"
             else:
                 # We have checked every Tool Meister tracking record and
                 # they all have posted their data (`posted` field is set
@@ -330,7 +329,7 @@ class ToolDataSink(Bottle):
             return
         for hostname, tm in self._tm_tracking.items():
             assert (
-                tm["posted"] is None or tm["posted"] == curr
+                tm["posted"] == curr
             ), f"_change_tm_tracking unexpected tm posted value, {tm!r}"
             tm["posted"] = new
 
@@ -388,16 +387,15 @@ class ToolDataSink(Bottle):
                 # Meisters have sent their collected data, so wait for all the
                 # tool meisters before proceeding.
                 self._wait_for_all_data()
-                # At this point all tracking data should be "yes".
-            elif self.state == "start":
-                # We are transitioning into the "start" state, so mark each
-                # Tool Meister as being dormant (i.e. we should not receive
-                # any data from them).
-                self._change_tm_tracking("yes", "dormant")
+                # At this point all tracking data should be "dormant" again.
             else:
-                assert self.state == "stop", f"Unexpected state, '{self.state}'"
-                # Nothing to do, no data movement for "stop"; FIXME: we should
-                # assert that all Tool Meister's tracking data is "dormant".
+                assert self.state in (
+                    "start",
+                    "stop",
+                ), f"Unexpected state, '{self.state}'"
+                # Nothing to do, no data movement for "start" or "stop";
+                # FIXME: we should assert that all Tool Meister's tracking
+                # data is "dormant".
 
         self._send_client_status("success")
 
@@ -601,7 +599,7 @@ class ToolDataSink(Bottle):
         with self._lock:
             tm_tracker = self._tm_tracking[hostname]
             assert tm_tracker["posted"] == "waiting", f"tm_tracker = {tm_tracker!r}"
-            tm_tracker["posted"] = "yes"
+            tm_tracker["posted"] = "dormant"
             self._cv.notify()
 
 

@@ -277,22 +277,27 @@ function verify_common_bench_script_options {
     fi
 }
 
-# generate inventory file with controller and remotes
+# Generate inventory file with controller and remotes.
 # FIXME: need to make this work with new tools-v1 directory format.
 function generate_inventory {
-    local component=$1
-    if [[ $component == "stockpile" ]]; then
-        echo "[stockpile]"
-        echo $HOSTNAME
-        echo "[all]"
-        echo $HOSTNAME
-        ls $tools_group_dir | awk -F@ '/^remote/ {print $2};'
+    local component="${1}"
+    local preamble=""
+    if [[ ${component} == "stockpile" ]]; then
+        preamble="[stockpile]\n%s\n\n[all]\n"
     else
-        echo "[controller]"
-        echo $HOSTNAME
-        echo "[remote]"
-        ls $tools_group_dir | awk -F@ '/^remote/ {print $2};'
+        preamble="[controller]\n%s\n\n[remote]\n"
     fi
+    printf -- ${preamble} "${hostname}"
+    for dirent in $(/bin/ls -1 ${tool_group_dir}); do
+        if [[ "${dirent}" == "__trigger__" ]]; then
+		# Ignore trigger files
+		continue
+	elif [[ ! -d ${tool_group_dir}/${dirent} ]]; then
+		# Ignore spurious files
+		continue
+	fi
+        printf -- "%s\n" "${dirent}"
+    done
 }
 
 function resolve_benchmark_bin {
