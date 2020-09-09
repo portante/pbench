@@ -27,11 +27,10 @@ function _pbench_setup() {
 	echo "                You will need to fix it before working with pbench." >&2
     else
 	local pdir=${prefix}/lib
-	if [[ -z "${PYTHONPATH:-}" || ":$PYTHONPATH:" != *"$pdir:"* ]] ; then
+	if [[  ":${PYTHONPATH:-}:" != *"$pdir:"* ]] ; then
 	    export PYTHONPATH=$pdir${PYTHONPATH:+:$PYTHONPATH}
 	fi
 	export _PBENCH_AGENT_CONFIG=${prefix}/config/pbench-agent.cfg
-	export PBENCH_ROOT=$prefix
 
 	_pbench_pathins "${prefix}/bench-scripts"
 	_pbench_pathins "${prefix}/util-scripts"
