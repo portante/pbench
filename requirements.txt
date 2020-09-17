@@ -6,6 +6,7 @@ click
 elasticsearch1==1.10.0
 flask
 flask-restful
+gitpython
 pyesbulk
 python-daemon
 python-pidfile
