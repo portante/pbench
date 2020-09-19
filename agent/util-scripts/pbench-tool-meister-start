@@ -25,12 +25,14 @@ import signal
 import sys
 import time
 
+cwd = os.getcwd()
+sys.path.append(cwd)
+
 from distutils.spawn import find_executable
 from pathlib import Path
 from modules import metaclass
 
 import redis
-
 
 # Port number is "One Tool" in hex 0x17001
 # FIXME: move to common area
