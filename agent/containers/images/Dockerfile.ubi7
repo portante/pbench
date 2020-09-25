@@ -1,0 +1,15 @@
+# {{ distro_image_name }} pbench-agent base image
+FROM registry.access.redhat.com/ubi7:7.8
+
+# Install the appropriate pbench repository file for {{ distro_image_name }}.
+COPY ./epel-7-pbench.repo /etc/yum.repos.d/pbench.repo
+
+# Install the pbench-agent RPM, which should have all its dependencies enumerated;
+# ... and make sure we have a proper pbench-agent.cfg file in place;
+# ... and finally, ensure the proper pbench-agent environment variables are set up.
+RUN \
+    yum install -y rh-python36 && \
+    yum install -y --enablerepo copr-pbench pbench-agent && \
+    yum -y clean all && \
+    rm -rf /var/cache/yum && \
+    cp -a /opt/pbench-agent/config/pbench-agent.cfg.example /opt/pbench-agent/config/pbench-agent.cfg
