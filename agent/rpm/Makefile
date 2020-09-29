@@ -55,7 +55,7 @@ tarball:
 	make -C .. DESTDIR=${TMPDIR}/${prog}-${VERSION}/agent
 	echo "${sha1}" > ${TMPDIR}/${prog}-${VERSION}/agent/SHA1
 	echo "${seqno}" > ${TMPDIR}/${prog}-${VERSION}/agent/SEQNO
-	tar zcf ${RPMSRC}/pbench-agent-${VERSION}.tar.gz -C ${TMPDIR} ${prog}-${VERSION}
+	tar zcf ${RPMSRC}/pbench-agent-${VERSION}.tar.gz --exclude-from ${CWD}/exclude.pats -C ${TMPDIR} ${prog}-${VERSION}
 	rm -rf ${TMPDIR}
 
 include rpm.mk

@@ -237,7 +237,7 @@ install: install-destdir install-util-scripts install-bench-scripts install-tool
 	${COPY} profile ${DESTDIR}
 	${INSTALL} ${INSTALLOPTS} ${STOCKPILEDIR}
 	${COPY} stockpile ${DESTDIR}
-	${COPY} ../lib/configtools ${LIBDIR}
+	if [ -d ../lib/configtools ] ;then ${COPY} ../lib/configtools ${LIBDIR} ;fi
 
 install-destdir:
 	${INSTALL} ${INSTALLOPTS} ${DESTDIR}
@@ -268,6 +268,10 @@ install-tool-scripts: install-destdir
 	${INSTALL} ${INSTALLOPTS} ${TOOLDIR}/postprocess
 	cd tool-scripts/postprocess; \
 	${COPY} ${tool-postprocess} ${TOOLDIR}/postprocess
+
+install-build-artifacts:
+	${COPY} SHA1 ${DESTDIR}
+	if [ -f SEQNO ] ;then ${COPY} SEQNO ${DESTDIR} ;fi
 
 clean:
 	rm -rf ${DESTDIR}

@@ -6,3 +6,7 @@ unittests
 tests/
 mock-bin/
 util-scripts/configs/
+ansible/bin
+ansible/pbench/*
+ansible/pbench_*
+ansible/Makefile
