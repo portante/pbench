@@ -36,52 +36,62 @@ export INVENTORY=/tmp/inventory.$$
 trap "rm -f $INVENTORY" QUIT INT EXIT
 
 function collect_kernel_config {
-	if [[ -e /boot/config-$(uname -r) ]] ;then
-		cp /boot/config-$(uname -r) $dir
+	kconf="/boot/config-$(uname -r)"
+	if [[ -e "${kconf}" ]] ;then
+		cp ${kconf} ${dir}/
+		debug_log "[${script_name}]done collecting kernel configuration data"
+	else
+		debug_log "[${script_name}]skipping, kernel config, \"${kconf}\", not available"
 	fi
 }
 
 function collect_mitigation_data {
 	# spectre and meltdown
 
-	> $dir/security-mitigation-data.txt
+	> ${dir}/security-mitigation-data.txt
 	# check the generic vulnerabilities files first
-	if [ -d  /sys/devices/system/cpu/vulnerabilities ] ;then
-		grep -Hs . /sys/devices/system/cpu/vulnerabilities/* >> $dir/security-mitigation-data.txt
+	if [[ -d /sys/devices/system/cpu/vulnerabilities ]]; then
+		grep -Hs . /sys/devices/system/cpu/vulnerabilities/* >> ${dir}/security-mitigation-data.txt
+	else
+		debug_log "[${script_name}]skipping, CPU vulnerabilities not available"
 	fi
 	# then check the RHEL-specific flag settings files - only
 	# applicable on x86_64
 	if [ -d /sys/kernel/debug/x86 ] ;then
-		echo >> $dir/security-mitigation-data.txt
-		grep -Hs . /sys/kernel/debug/x86/*enabled >> $dir/security-mitigation-data.txt
+		echo >> ${dir}/security-mitigation-data.txt
+		grep -Hs . /sys/kernel/debug/x86/*enabled >> ${dir}/security-mitigation-data.txt
+	else
+		debug_log "[${script_name}]skipping, security mitigations not available"
 	fi
+	debug_log "[${script_name}]done collecting security mitigation data"
 }
 
 function collect_libvirt {
-	if [[ -e /var/log/libvirt && -e /etc/libvirt ]]; then
-		debug_log "[$script_name]collecting libvirt data"
-		mkdir -p $dir/libvirt/log
-		pushd /var/log/libvirt >/dev/null && find . -name "*.log" | cpio -pdum $dir/libvirt/log/ 2>/dev/null
-		mkdir -p $dir/libvirt/etc
-		pushd /etc/libvirt >/dev/null && find | cpio -pdum $dir/libvirt/etc/ 2>/dev/null
-		debug_log "[$script_name]done collecting libvirt data"
+	if [[ -r /var/log/libvirt && -r /etc/libvirt ]]; then
+		mkdir -p ${dir}/libvirt/log
+		pushd /var/log/libvirt >/dev/null && find . -name "*.log" | cpio -pdum ${dir}/libvirt/log/ 2>/dev/null
+		mkdir -p ${dir}/libvirt/etc
+		pushd /etc/libvirt >/dev/null && find | cpio -pdum ${dir}/libvirt/etc/ 2>/dev/null
+		debug_log "[${script_name}]done collecting libvirt data"
+	else
+		debug_log "[${script_name}]skipping, libvirt not available"
 	fi
 }
 
 function collect_topology {
-	debug_log "[$script_name]collecting system topology"
-	if [[ -f /usr/bin/lstopo ]]; then
-		lstopo --of txt >$dir/lstopo.txt
+	if [[ -x /usr/bin/lstopo ]]; then
+		lstopo --of txt >${dir}/lstopo.txt
+		debug_log "[${script_name}]done collecting system topology"
+	else
+		debug_log "[${script_name}]skipping, topology not available"
 	fi
-	debug_log "[$script_name]done collecting system topology"
 }
 
 function collect_block {
-	debug_log "[$script_name]collecting block data"
-	for n in  /sys/block/[s,h,v]d\*[a-z]/; do
-		find $n  -type f -printf "%p " -exec cat '{}' \;  2>/dev/null
-	done >$dir/block-params.log
-	debug_log "[$script_name]done collecting block data"
+	for n in /sys/block/[s,h,v]d\*[a-z]/; do
+		find ${n} -type f -printf "%p " -exec cat '{}' \; 2>/dev/null
+	done >${dir}/block-params.log
+	debug_log "[${script_name}]done collecting block data"
 }
 
 function collect_sos {
@@ -137,21 +147,22 @@ function collect_sos {
 	_sosreport_md5="${_sosreport_tb}.md5"
 	ls -1 ${_sosreport_tb} ${_sosreport_md5} > ${dir}/sosreport-names.lis 2> /dev/null
 	if [[ $? -ne 0 ]]; then
-		error_log "[$script_name]sosreport collection failed!"
+		error_log "[${script_name}]sosreport collection failed!"
 	else
 		rm -f ${dir}/sosreport-names.lis
-		debug_log "[$script_name]done collecting sosreport"
+		debug_log "[${script_name}]done collecting sosreport"
 	fi
 }
 
 function collect_ara_data {
 	# collect data only when ara is installed
 	if python -c "import ara" &>/dev/null; then
-		mkdir $dir/ara
-		generate_inventory > $INVENTORY
-		ansible-playbook -i ${INVENTORY} --extra-vars '{"SYSINFO_DIR":"'$dir'"}' "$pbench_install_dir/ansible/ara/ara.yml"
+		mkdir ${dir}/ara
+		generate_inventory > ${INVENTORY}
+		ansible-playbook -i ${INVENTORY} --extra-vars '{"SYSINFO_DIR":"'${dir}'"}' "${pbench_install_dir}/ansible/ara/ara.yml"
+		debug_log "[${script_name}]: done collecting ara data"
 	else
-		debug_log "[$script_name]skipping, $item not installed"
+		debug_log "[${script_name}]skipping, ara python module not installed"
 	fi
 }
 
@@ -164,47 +175,47 @@ function collect_stockpile_data {
 	stockpile_output_path=$(pbench-config stockpile_output_path stockpile)
 	stockpile_log=$(pbench-config stockpile_log stockpile)
 
-	if [[ -z "$stockpile_path" ]]; then
-		stockpile_path=$pbench_install_dir
+	if [[ -z "${stockpile_path}" ]]; then
+		stockpile_path=${pbench_install_dir}
 	fi
 
 	# set stockpile log file and output paths
-	if [[ -z "$stockpile_log" ]]; then
-		stockpile_log=$dir/stockpile.log
+	if [[ -z "${stockpile_log}" ]]; then
+		stockpile_log=${dir}/stockpile.log
 	fi
-	if [[ -z "$stockpile_output_path" ]]; then
-		stockpile_output_path=$dir/stockpile.json
+	if [[ -z "${stockpile_output_path}" ]]; then
+		stockpile_output_path=${dir}/stockpile.json
 	fi
 
 	# generate inventory and run stockpile
-	generate_inventory stockpile > $INVENTORY
-	debug_log "[$script_name]Collecting stockpile data"
-	stockpile_opts="stockpile_user=$stockpile_user local_remote_user=$stockpile_local_remote_user host_remote_user=$stockpile_host_remote_user stockpile_output_path=$stockpile_output_path"
-	stockpile_playbook="$stockpile_path/stockpile/stockpile.yml"
-	echo "ansible-playbook -vv --extra-vars '"$stockpile_opts"' -i $INVENTORY $stockpile_playbook" > ${benchmark_run_dir}/stockpile.cmd
-	chmod +x ${benchmark_run_dir}/stockpile.cmd
-	debug_log "Running stockpile with options: $stockpile_opts"
-	${benchmark_run_dir}/stockpile.cmd 2>&1 >$stockpile_log
-	if [[ $? != 0 ]]; then
-		error_log "[$script_name] Stockpile run failed"
+	generate_inventory stockpile > ${INVENTORY}
+	stockpile_opts="stockpile_user=${stockpile_user} local_remote_user=${stockpile_local_remote_user} host_remote_user=${stockpile_host_remote_user} stockpile_output_path=${stockpile_output_path}"
+	stockpile_playbook="${stockpile_path}/stockpile/stockpile.yml"
+	echo "ansible-playbook -vv --extra-vars '"${stockpile_opts}"' -i ${INVENTORY} ${stockpile_playbook}" > ${dir}/stockpile.cmd
+	chmod +x ${dir}/stockpile.cmd
+	debug_log "Running stockpile with options: ${stockpile_opts}"
+	${dir}/stockpile.cmd 2>&1 >${stockpile_log}
+	if [[ ${?} != 0 ]]; then
+		error_log "[${script_name}] Stockpile run failed"
 		exit 1
+	else
+		debug_log "[${script_name}]: done collecting stockpile data"
 	fi
 }
 
 function collect_insights_data {
-	debug_log "[$script_name]collecting insights data"
-	script -c 'insights-client --offline --logging-file $dir/insights-client.log' /dev/null | sed -n 's/.*\sat\s//p' | tr -d "$'\r" | xargs -I '{}' mv {} $dir
-	if [[ $? != 0 ]]; then
-		error_log "[$script_name] insights-client run failed"
+	script -c 'insights-client --offline --logging-file ${dir}/insights-client.log' /dev/null | sed -n 's/.*\sat\s//p' | tr -d "$'\r" | xargs -I '{}' mv {} ${dir}
+	if [[ ${?} != 0 ]]; then
+		error_log "[${script_name}] insights-client run failed"
 		exit 1
 	else
-		debug_log "[$script_name]done collecting insights data"
+		debug_log "[${script_name}]done collecting insights data"
 	fi
 }
 
 
 for item in ${sysinfo//,/ };do
-	debug_log "[$script_name]: collecting $item"
+	debug_log "[${script_name}]: collecting ${item}"
 	if [[ "$item" == "kernel_config" ]]; then
 		collect_kernel_config &
 	elif [[ "$item" == "security_mitigations" ]]; then
@@ -224,7 +235,8 @@ for item in ${sysinfo//,/ };do
 	elif [[ "$item" == "insights" ]]; then
                 collect_insights_data &
 	else
-		error_log "[$script_name]bad sysinfo value, \"${item}\""
+		error_log "[${script_name}]bad sysinfo value, \"${item}\""
+		continue
 	fi
 done
 wait
