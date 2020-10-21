@@ -9,6 +9,7 @@ into the configured Elasticsearch V1 instance.
 import sys
 import os
 import glob
+import signal
 import tarfile
 import tempfile
 from pathlib import Path
@@ -34,6 +35,30 @@ from pbench.server.indexer import (
 )
 from pbench.server.report import Report
 from pbench.server.utils import rename_tb_link, quarantine
+
+
+class SigIntException(Exception):
+    pass
+
+
+class SigTermException(Exception):
+    pass
+
+
+def sigint_handler(signum, frame):
+    raise SigIntException()
+
+
+def sigterm_handler(signum, frame):
+    raise SigTermException()
+
+
+sigquit_interrupt = False
+
+
+def sigquit_handler(signum, frame):
+    global sigquit_interrupt
+    sigquit_interrupt = True
 
 
 # Internal debugging flag.
@@ -292,6 +317,8 @@ def main(options, name):
             skipped = Path(tmpdir, f"{name}.{idxctx.TS}.skipped")
             ie_filepath = Path(tmpdir, f"{name}.{idxctx.TS}.indexing-errors.json")
 
+            signal.signal(signal.SIGTERM, sigterm_handler)
+            signal.signal(signal.SIGQUIT, sigquit_handler)
             for size, controller, tb in tarballs:
                 # Sanity check source tar ball path
                 linksrc_dir = Path(tb).parent
@@ -327,9 +354,24 @@ def main(options, name):
                     # can't/won't be retried.
                     with ie_filepath.open(mode="w") as fp:
                         idxctx.logger.debug("begin indexing")
-                        es_res = es_index(
-                            idxctx.es, actions, fp, idxctx.logger, idxctx._dbg
-                        )
+                        signal.signal(signal.SIGINT, sigint_handler)
+                        try:
+                            es_res = es_index(
+                                idxctx.es, actions, fp, idxctx.logger, idxctx._dbg
+                            )
+                        except SigIntException:
+                            idxctx.logger.exception(
+                                "Indexing interrupted by SIGINT, continuing to next tarball"
+                            )
+                            continue
+                        finally:
+                            # take down signal handler SIGINT
+                            pass
+                except SigTermException:
+                    idxctx.logger.exception(
+                        "Indexing interrupted by SIGTERM, terminating"
+                    )
+                    break
                 except UnsupportedTarballFormat as e:
                     idxctx.logger.warning("Unsupported tar ball format: {}", e)
                     tb_res = 4
@@ -447,6 +489,9 @@ def main(options, name):
                         tb, Path(controller_path, linkerrdest), idxctx.logger
                     )
                 idxctx.logger.info("Finished {} (size {:d})", tb, size)
+
+                if sigquit_interrupt:
+                    break
         except Exception:
             idxctx.logger.exception("Unexpected setup error")
             res = 12
