@@ -21,13 +21,15 @@ export _testdir=${_testroot}/pbench
 # Copy util-scripts execution environment to _testroot
 _testopt=${_testroot}/opt/pbench-agent
 res=0
-mkdir -p ${_testopt}/config ${_testopt}/util-scripts/tool-meister ${_testopt}/tool-scripts ${_testopt}/lib ${_testopt}/unittest-scripts ${_testopt}/common/lib
+mkdir -p ${_testopt}/config ${_testopt}/templates ${_testopt}/util-scripts/tool-meister ${_testopt}/tool-scripts ${_testopt}/lib ${_testopt}/unittest-scripts ${_testopt}/common/lib
 let res=res+${?}
 cat ${_tdir}/../base.ut.pre ${_tdir}/../base ${_tdir}/../base.ut.post > ${_testopt}/base
 let res=res+${?}
 cp -rL ${_tdir}/../config/* ${_testopt}/config/
 # rename pbench-agent.cfg - we need to process it for each test but it gets cleaned up after each test.
 mv ${_testopt}/config/pbench-agent.cfg ${_testopt}/config/pbench-agent.cfg.orig
+let res=res+${?}
+cp -a ${_tdir}/../templates/* ${_testopt}/templates/
 let res=res+${?}
 cp -a ${_tdir}/{require-rpm,pbench-*} ${_testopt}/util-scripts/
 let res=res+${?}
@@ -216,6 +218,8 @@ function _verify_output {
            -e 's;raw_size = [0-9][0-9]*;raw_size = #####;g' \
            -e 's;v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*;v#.##.##;g' \
            -e 's;"pid": [0-9][0-9]*\([,}]\);"pid": NNNNN\1;g' \
+           -e "s;'pid': [0-9][0-9]*\([,}]\);'pid': NNNNN\1;g" \
+           -e "s;\(waiting for tool-data-sink\) ([0-9][0-9]*) \(to exit\);\1 (#####) \2;g" \
            -e 's;tar up [0-9][0-9]* bytes;tar up ##### bytes;g' \
            ${_testout}
     if [[ ${?} -ne 0 ]]; then
@@ -311,10 +315,6 @@ let errs=0
 
 declare -A tools=(
     [test-00]="pbench-register-tool"
-    [test-01]="pbench-metadata-log"
-    [test-02]="pbench-metadata-log"
-    [test-03]="pbench-metadata-log"
-    [test-04]="pbench-metadata-log"
     [test-05]="pbench-start-tools"
     [test-06]="pbench-stop-tools"
     [test-07]="pbench-postprocess-tools"
@@ -336,10 +336,11 @@ declare -A tools=(
     [test-11.12]="pbench-register-tool-set"
     [test-11.13]="pbench-register-tool-set"
     [test-11.14]="pbench-register-tool-set"
+    [test-17]="test-tm-start-bad-group"
+    [test-18]="test-tm-stop-bad-group"
     [test-19]="test-tool-trigger"
     [test-20]="pbench-move-results"
     [test-21]="pbench-move-results"
-    [test-22]="pbench-metadata-log"
     [test-23]="pbench-collect-sysinfo"
     [test-24]="pbench-collect-sysinfo"
     [test-25]="pbench-collect-sysinfo"
@@ -365,7 +366,6 @@ declare -A tools=(
     [test-47]="pbench-register-tool"
     [test-48]="test-add-metalog-%-option"
     [test-49]="pbench-copy-results"
-    [test-50]="test-pbench-metadata-log"
     [test-51]="test-start-stop-tool-meister"
     [test-52]="test-start-stop-tool-meister"
     [test-53]="test-client-tool-meister"
@@ -376,8 +376,6 @@ declare -A tools=(
     [test-58]="pbench-stop-tools"
     [test-59]="pbench-postprocess-tools"
     [test-60]="pbench-send-tools"
-    [test-61]="pbench-init-tools"
-    [test-62]="pbench-end-tools"
 )
 
 declare -A sortem=(
@@ -387,10 +385,6 @@ declare -A sortem=(
 
 declare -A options=(
     [test-00]="--name=mpstat --group=default -- --interval=10"
-    [test-01]="--dir=${_testdir}/mock-run beg"
-    [test-02]="--dir=${_testdir}/mock-run beg"
-    [test-03]="--dir=${_testdir}/mock-run beg"
-    [test-04]="--dir=${_testdir}/mock-run beg"
     [test-05]="--group=default --dir=42-iter/sample42"
     [test-06]="--group=default --dir=42-iter/sample42"
     [test-07]="--group=foobar --dir=${_testdir}/42-iter/sample42"
@@ -423,7 +417,6 @@ declare -A options=(
     [test-20]="--help"
     # pbench-move-results - no args, nothing to do
     #[test-21]=""
-    [test-22]="--dir=${_testdir}/mock-run end"
     [test-23]="--help"
     [test-24]="--options"
     [test-25]="--check --sysinfo=all"
@@ -462,21 +455,20 @@ declare -A options=(
     [test-54]="bad"
     [test-55]="--dir=${_testdir}/mock-run end"
     [test-56]="lite with-remotes"
-    [test-57]="lite with-remotes delayed-send"
+    [test-57]="lite with-remotes delayed-send interrupt"
     [test-58]="--group=default --dir=42-iter/sample42"
     [test-59]="--group=foobar --dir=42-iter/sample42"
     [test-60]="--group=default --dir=42-iter/sample42"
-    [test-61]="--group=default --dir=${_testdir}/mock-run"
-    [test-62]="--group=default --dir=${_testdir}/mock-run"
 )
 
 declare -A expected_status=(
-    [test-01]=1
     [test-09]=1
     [test-10]=1
     [test-11.07]=1
     [test-11.08]=1
     [test-11.11]=1
+    [test-17]=1
+    [test-18]=1
     [test-29]=1
     [test-44]=1
     [test-46]=1
@@ -499,8 +491,6 @@ declare -A pre_hooks=(
     [test-47]='mkdir ${_testdir}/tmp; printf -- "# good list with no labels\none.example.com\ntwo.example.com\nthree.example.com\n" > ${_testdir}/tmp/remotes.lis'
     [test-48]='mkdir ${_testdir}/tmp; printf -- "%s\n" "30%" > ${_testdir}/tmp/foo.txt'
     [test-55]='pbench-register-tool --name=mpstat --remote=localhost > /dev/null; mkdir ${_testdir}/mock-run; ln -s mock-pbench-tool-meister-client ${_testopt}/unittest-scripts/pbench-tool-meister-client'
-    [test-61]='ln -s mock-pbench-tool-meister-client ${_testopt}/unittest-scripts/pbench-tool-meister-client'
-    [test-62]='ln -s mock-pbench-tool-meister-client ${_testopt}/unittest-scripts/pbench-tool-meister-client; mkdir -p ${_testdir}/mock-run/tools-default'
 )
 
 function sort_testlog {
@@ -530,8 +520,6 @@ declare -A post_hooks=(
     [test-55]='rm ${_testopt}/unittest-scripts/pbench-tool-meister-client'
     [test-56]='sort_testlog; sort_tdslog; sort_tmlogs'
     [test-57]='sort_testlog; sort_tdslog; sort_tmlogs'
-    [test-61]='rm ${_testopt}/unittest-scripts/pbench-tool-meister-client'
-    [test-62]='rm ${_testopt}/unittest-scripts/pbench-tool-meister-client'
 )
 
 # Verify that there are no dangling gold files and sample directories.
