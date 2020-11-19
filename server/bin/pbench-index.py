@@ -127,7 +127,42 @@ def main(options, name):
          8 - Unable to load and process expected mapping files
          9 - Unable to update index templates in configured Elasticsearch
              instance
+
+
+        Signal Handlers used to establish different patterns for the four behaviors:
+
+        1. Gracefully stop processing tar balls
+            - The current tar ball is indexed until completion, but no other tar balls are processed.
+            - SIGQUIT
+            - Handler Behavior:
+                - Sets a flag that causes the code flow to break out of the for loop.
+                - Does not raise an exception.
+
+        2. Interrupt the current tar ball being indexed, and proceed to the next one, if any
+            - SIGINT
+            - Handler Behavior:
+                - try/except/finally placed immediately around the es_index() call so that the
+                    signal handler will only be established for the duration of the call.
+                - Raises an exception caught by above try/except/finally.
+                - The finally clause would take down the signal handler.
+
+        3. Report the current state of indexing
+            - Current tar ball being processed
+            - How many remaining
+            - How many have been completed
+            - Errors encountered
+            - SIGHUP
+            - Handler Behavior:
+                - Kicks a special thread to log indexing state data
+                - No exception raised
+
+        4. Stop processing tar balls immediately and exit gracefully
+            - SIGTERM
+            - Handler Behavior:
+                - Raises an exception caught be a new, outer-most, try/except block that does not
+                    have a finally clause (as you don't want any code execution in the finally block).
     """
+
     _name_suf = "-tool-data" if options.index_tool_data else ""
     _name_re = "-re" if options.re_index else ""
     name = f"{name}{_name_re}{_name_suf}"
@@ -354,8 +389,8 @@ def main(options, name):
                     # can't/won't be retried.
                     with ie_filepath.open(mode="w") as fp:
                         idxctx.logger.debug("begin indexing")
-                        signal.signal(signal.SIGINT, sigint_handler)
                         try:
+                            signal.signal(signal.SIGINT, sigint_handler)
                             es_res = es_index(
                                 idxctx.es, actions, fp, idxctx.logger, idxctx._dbg
                             )
@@ -365,7 +400,8 @@ def main(options, name):
                             )
                             continue
                         finally:
-                            # take down signal handler SIGINT
+                            # close SIGINT signal Handler
+                            # signal.signal(signal.SIGINT, sigint_handler)
                             pass
                 except SigTermException:
                     idxctx.logger.exception(
@@ -488,7 +524,12 @@ def main(options, name):
                     rename_tb_link(
                         tb, Path(controller_path, linkerrdest), idxctx.logger
                     )
-                idxctx.logger.info("Finished {} (size {:d})", tb, size)
+                idxctx.logger.info(
+                    "Finished{} {} (size {:d})",
+                    "[SIGQUIT]" if sigquit_interrupt else "",
+                    tb,
+                    size,
+                )
 
                 if sigquit_interrupt:
                     break
