@@ -37,7 +37,6 @@ util-scripts = \
 	pbench-kill-tools \
 	pbench-log-timestamp \
 	pbench-make-result-tb \
-	pbench-metadata-log \
 	pbench-move-results \
 	pbench-output-monitor \
 	pbench-postprocess-tools \
