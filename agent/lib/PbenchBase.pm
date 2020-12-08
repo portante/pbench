@@ -15,8 +15,8 @@ use JSON;
 our @EXPORT_OK = qw(get_json_file put_json_file get_benchmark_names get_clients get_pbench_run_dir
                     get_pbench_install_dir get_pbench_config_dir get_pbench_bench_config_dir
                     get_benchmark_results_dir get_params remove_params remove_element get_hostname
-                    get_pbench_datetime load_benchmark_config metadata_log_begin_run
-                    metadata_log_end_run metadata_log_record_iteration);
+                    get_pbench_datetime load_benchmark_config metadata_log_end_run
+                    metadata_log_record_iteration);
 
 my $script = "PbenchBase.pm";
 
@@ -169,18 +169,8 @@ sub load_benchmark_config {
     return %$json_ref
 }
 
-sub metadata_log_begin_run {
-    my $benchmark_run_dir = shift;
-    my $benchmark_name = shift;
-    my $group = shift;
-    system("benchmark=" . $benchmark_name . " pbench-metadata-log --group=" . $group . " --dir=" . $benchmark_run_dir . " beg");
-}
-
 sub metadata_log_end_run {
     my $benchmark_run_dir = shift;
-    my $benchmark_name = shift;
-    my $config = shift;
-    my $group = shift;
     my @iteration_names = @_;
 
     my $iteration_names = "";
@@ -189,15 +179,7 @@ sub metadata_log_end_run {
     for (my $i=0; $i<@iteration_names; $i++) {
         $iteration_names = $iteration_names . " " . $iteration_names[$i];
     }
-
-    my $benchmark_run_name = $benchmark_run_dir;
-    $benchmark_run_name =~ s/.*\///g;
-
-    system("echo " . $benchmark_run_name . " | pbench-add-metalog-option " . $mdlog . " pbench name");
     system("echo " . $iteration_names . " | pbench-add-metalog-option " . $mdlog . " pbench iterations");
-    system("echo " . $config . " | pbench-add-metalog-option " . $mdlog . " pbench config");
-    system("echo " . $benchmark_name . " | pbench-add-metalog-option " . $mdlog . " pbench script");
-    system("benchmark=" . $benchmark_name . " pbench-metadata-log --group=" . $group . " --dir=" . $benchmark_run_dir . " end");
 }
 
 sub metadata_log_record_iteration {
