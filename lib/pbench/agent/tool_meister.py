@@ -55,61 +55,22 @@ import pidfile
 import redis
 
 from daemon import DaemonContext
-from redis.connection import SERVER_CLOSED_CONNECTION_ERROR
-
-import pbench.agent.toolmetadata as toolmetadata
 
 from pbench.common.utils import md5sum
+from pbench.agent.constants import (
+    tm_allowed_actions,
+    tm_channel_suffix_to_tms,
+    tm_channel_suffix_from_tms,
+    tm_channel_suffix_to_logging,
+)
+from pbench.agent.redis import RedisHandler, RedisChannelSubscriber
+from pbench.agent.toolmetadata import ToolMetadata
+from pbench.agent.utils import collect_local_info
 
-
-# FIXME: The client response channel should be in a shared constants module.
-client_channel = "tool-meister-client"
 
 # Logging format string for unit tests
 fmtstr_ut = "%(levelname)s %(name)s %(funcName)s -- %(message)s"
 fmtstr = "%(asctime)s %(levelname)s %(process)s %(thread)s %(name)s %(funcName)s %(lineno)d -- %(message)s"
-
-
-class RedisHandler(logging.Handler):
-    """Publish messages to a given channel on a Redis server.
-    """
-
-    def __init__(
-        self,
-        channel,
-        hostname=None,
-        redis_client=None,
-        level=logging.NOTSET,
-        **redis_kwargs,
-    ):
-        """Create a new logger for the given channel and redis_client.
-        """
-        super().__init__(level)
-        self.channel = channel
-        self.hostname = hostname
-        self.redis_client = redis_client or redis.Redis(**redis_kwargs)
-        self.counter = 0
-        self.errors = 0
-        self.redis_errors = 0
-
-    def emit(self, record):
-        """Publish record to redis logging channel
-        """
-        try:
-            formatted_record = self.format(record)
-            self.redis_client.publish(
-                self.channel, f"{self.hostname} {self.counter:04d} {formatted_record}"
-            )
-        except redis.RedisError:
-            self.redis_errors += 1
-        except Exception:
-            self.errors += 1
-        finally:
-            self.counter += 1
-
-
-class ToolException(Exception):
-    pass
 
 
 class PersistentTool:
@@ -194,6 +155,13 @@ class PersistentTool:
         return 0
 
 
+class ToolException(Exception):
+    """Exception class for all exceptions raised by the Tool class object methods.
+    """
+
+    pass
+
+
 class Tool:
     """Encapsulates all the state needed to manage a tool running as a background
     process.
@@ -224,6 +192,25 @@ class Tool:
                 f"Tool({self.name}) has an unexpected stop process running"
             )
 
+    def install(self):
+        """Synchronously runs the tool --install mode capturing the return code and
+        output, returing them as a tuple to the caller.
+        """
+        args = [
+            f"{self.pbench_bin}/tool-scripts/{self.name}",
+            "--install",
+            f"--dir={self.tool_dir}",
+            self.tool_opts,
+        ]
+        cp = subprocess.run(
+            args,
+            stdin=None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+        )
+        return (cp.returncode, cp.stdout)
+
     def start(self):
         """Creates the background process running the tool's "start" operation.
         """
@@ -252,10 +239,10 @@ class Tool:
                 f"Tool({self.name}) has an unexpected stop process running"
             )
 
-        # FIXME - before we "stop" a tool, check to see if a
-        # "{tool}/{tool}.pid" file exists.  If it doesn't wait for a second to
-        # show up, if after a second it does not show up, then give up waiting
-        # and just call the stop method.
+        # Before we "stop" a tool, check to see if a "{tool}/{tool}.pid" file
+        # exists.  If it doesn't wait for a second to show up, if after a
+        # second it does not show up, then give up waiting and just call the
+        # stop method.
         tool_pid_file = self.tool_dir / self.name / f"{self.name}.pid"
         cnt = 0
         while not tool_pid_file.exists() and cnt < 100:
@@ -305,14 +292,6 @@ class Tool:
             raise ToolException(f"Tool({self.name}) wait not called after 'stop'")
 
 
-class RedisDisconnected(Exception):
-    """Simple exception to be raised when we lose the connection to the Redis
-    server.
-    """
-
-    pass
-
-
 class Terminate(Exception):
     """Simple exception to be raised when the Tool Meister main loop should exit
     gracefully.
@@ -344,8 +323,9 @@ class ToolMeister:
         {
             "benchmark_run_dir":  "<Top-level directory of the current"
                           " benchmark run>",
-            "channel":    "<Redis server channel name to subscribe to for"
-                          " start/stop/send messages from controller>",
+            "channel_prefix":  "<Redis server channel prefix used to form"
+                          " the to/from channel names used for receiving"
+                          " actions and sending status>",
             "controller": "<hostname of the controller driving all the tool"
                           " meisters; if this tool meister is running locally"
                           " with the controller, then it does not need to send"
@@ -357,6 +337,7 @@ class ToolMeister:
                           " --group argument to the individual tools>",
             "hostname":   "<hostname of tool meister, should be same as"
                           " 'hostname -f' where tool meister is running>",
+            "tool_metadata":  "<Metadata about the nature of all tools>",
             "tools": {
                 "tool-0": [ "--opt-0", "--opt-1", ..., "--opt-N" ],
                 "tool-1": [ "--opt-0", "--opt-1", ..., "--opt-N" ],
@@ -398,79 +379,77 @@ class ToolMeister:
         """
         try:
             benchmark_run_dir = params["benchmark_run_dir"]
-            channel = params["channel"]
+            channel_prefix = params["channel_prefix"]
             controller = params["controller"]
             group = params["group"]
             hostname = params["hostname"]
+            tool_metadata = ToolMetadata.tool_md_from_dict(params["tool_metadata"])
             tools = params["tools"]
         except KeyError as exc:
             raise ToolMeisterError(f"Invalid parameter block, missing key {exc}")
         else:
-            return benchmark_run_dir, channel, controller, group, hostname, tools
+            return (
+                benchmark_run_dir,
+                channel_prefix,
+                controller,
+                group,
+                hostname,
+                tool_metadata,
+                tools,
+            )
+
+    _valid_states = frozenset(["startup", "idle", "running", "shutdown"])
+    _message_keys = frozenset(["action", "args", "directory", "group"])
 
     def __init__(
-        self, pbench_bin, tar_path, sysinfo_dump, params, redis_server, logger
+        self, pbench_bin, tmp_dir, tar_path, sysinfo_dump, params, redis_server, logger
     ):
+        # Squirrel away constructor parameters
         self.pbench_bin = pbench_bin
+        self._tmp_dir = tmp_dir
         self.tar_path = tar_path
         self.sysinfo_dump = sysinfo_dump
         ret_val = self.fetch_params(params)
         (
             self._benchmark_run_dir,
-            self._channel,
+            self._channel_prefix,
             self._controller,
             self._group,
             self._hostname,
+            self._tool_metadata,
             self._tools,
         ) = ret_val
         self._rs = redis_server
         self.logger = logger
-        self.tool_metadata = toolmetadata.ToolMetadata(
-            "redis", redis_server, self.logger
-        )
-        self.persist_tools = self.tool_metadata.getPersistentTools()
+        # No running tools at first
         self._running_tools = dict()
+        # No persistent tools at first
         self._persistent_tools = dict()
-        logger.debug("pubsub")
-        self._pubsub = self._rs.pubsub()
-        logger.debug("subscribe %s", self._channel)
-        self._pubsub.subscribe(self._channel)
-        logger.debug("listen")
-        self._chan = self._pubsub.listen()
-        logger.debug("done listening")
-        # Now that we have subscribed to the channel as specified in the
-        # params object, we need to pull off the first message, which is an
-        # acknowledgement that we have properly subscribed.
-        logger.debug("next")
-        resp = next(self._chan)
-        assert resp["type"] == "subscribe", f"Unexpected 'type': {resp!r}"
-        assert resp["pattern"] is None, f"Unexpected 'pattern': {resp!r}"
-        assert (
-            resp["channel"].decode("utf-8") == self._channel
-        ), f"Unexpected 'channel': {resp!r}"
-        assert resp["data"] == 1, f"Unexpected 'data': {resp!r}"
-        logger.debug("next done")
+        self.persist_tools = self._tool_metadata.getPersistentTools()
         # We start in the "startup" state, waiting for first "init" action.
         self.state = "startup"
-        self._valid_states = frozenset(["startup", "idle", "running", "shutdown"])
+
+        # A series of operational "constants".
         self._state_trans = {
             "end": {"curr": "idle", "next": "shutdown", "action": self.end_tools},
             "init": {"curr": "startup", "next": "idle", "action": self.init_tools},
             "start": {"curr": "idle", "next": "running", "action": self.start_tools},
             "stop": {"curr": "running", "next": "idle", "action": self.stop_tools},
         }
-        self._valid_actions = frozenset(
-            ["end", "init", "send", "start", "stop", "sysinfo", "terminate"]
-        )
         for key in self._state_trans.keys():
             assert (
-                key in self._valid_actions
+                key in tm_allowed_actions
             ), f"INTERNAL ERROR: invalid state transition entry, '{key}'"
             assert self._state_trans[key]["next"] in self._valid_states, (
                 "INTERNAL ERROR: invalid state transition 'next' entry for"
                 f" '{key}', '{self._state_trans[key]['next']}'"
             )
-        self._message_keys = frozenset(["action", "args", "directory", "group"])
+
+        # Name of the channel on which this Tool Meister instance will listen.
+        self._to_tms_channel = f"{self._channel_prefix}-{tm_channel_suffix_to_tms}"
+        # Name of the channel on which all Tool Meister instances respond.
+        self._from_tms_channel = f"{self._channel_prefix}-{tm_channel_suffix_from_tms}"
+
         # The current 'directory' into which the tools are collected; not set
         # until a 'start tools' is executed, cleared when a 'send tools'
         # completes.
@@ -481,80 +460,106 @@ class ToolMeister:
         # The "tool directory" is the current directory in use by running
         # tools for storing their collected data.
         self._tool_dir = None
-        # The temporary directory to use for capturing all tool data.
-        self._tmp_dir = os.environ["pbench_tmp"]
+        # The operational Redis "pub-sub" subscriber object filled in by
+        # context manager.
+        self._to_tms_chan = None
 
-        # FIXME: run all the "--install" commands for the tools to ensure
-        # they are successful before declaring that we are ready.
+    def __enter__(self):
+        """Enter context manager method - responsible for establishing the
+        Tool Meister channel on which we'll receive operational instructions,
+        collecting the local data and metadata about this Tool Meister
+        instance, and sending our startup message to the Tool Data Sink.
+        """
+        self._to_tms_chan = RedisChannelSubscriber(
+            self._rs, self._to_tms_channel, RedisChannelSubscriber.ONEOFMANY
+        )
+
+        version, seqno, sha1, hostdata = collect_local_info(self.pbench_bin)
+
+        tool_installs = {}
+        for name, tool_opts in sorted(self._tools.items()):
+            if name in self.persist_tools:
+                # Persistent tools do not have install checks
+                continue
+            try:
+                tool = Tool(
+                    name,
+                    self._group,
+                    tool_opts,
+                    self.pbench_bin,
+                    self._tool_dir,
+                    self.logger,
+                )
+                tool_installs[name] = tool.install()
+            except Exception:
+                self.logger.exception("Failed to run tool %s install check", name)
+                tool_installs[name] = (-42, "internal-error")
+
+        started_msg = dict(
+            hostname=self._hostname,
+            kind="tm",
+            pid=os.getpid(),
+            version=version,
+            seqno=seqno,
+            sha1=sha1,
+            hostname_f=hostdata["f"],
+            hostname_s=hostdata["s"],
+            hostname_i=hostdata["i"],
+            hostname_I=hostdata["I"],
+            hostname_A=hostdata["A"],
+            installs=tool_installs,
+        )
 
         # Tell the entity that started us who we are, indicating we're ready.
-        started_msg = dict(kind="tm", hostname=self._hostname, pid=os.getpid())
-        logger.debug("publish *-start")
-        self._rs.publish(
-            f"{self._channel}-start", json.dumps(started_msg, sort_keys=True)
-        )
-        logger.debug("published *-start")
+        self.logger.debug("publish %s", self._from_tms_channel)
+        num_present = 0
+        timeout = time.time() + 60
+        while num_present == 0:
+            num_present = self._rs.publish(
+                self._from_tms_channel, json.dumps(started_msg, sort_keys=True)
+            )
+            if num_present == 0 and time.time() >= timeout:
+                raise Exception(
+                    "Unable to publish startup ack message, {started_msg!r}"
+                )
+        self.logger.debug("published %s", self._from_tms_channel)
+        return self
 
-    def cleanup(self):
-        """cleanup - close down the Redis pubsub object."""
-        self.logger.debug("%s: cleanup", self._hostname)
-        if self._pubsub:
-            self.logger.debug("unsubscribe")
-            self._pubsub.unsubscribe()
-            self.logger.debug("pubsub close")
-            self._pubsub.close()
+    def __exit__(self, *args):
+        """Exit context manager method - close down the Redis pubsub object if
+        it exists.
+        """
+        self.logger.info("%s: terminating", self._hostname)
+        self._to_tms_chan.close()
+        # Send the final "terminated" acknowledgement message.
+        self._send_client_status("terminated")
 
-    def _get_data(self):
-        """_get_data - fetch and decode the JSON object off the "wire".
+    def _gen_data(self):
+        """_gen_data - fetch and decode the JSON object off the "wire".
 
         The keys in the JSON object are validated against the expected keys,
         and the value of the 'action' key is validated against the list of
         actions.
         """
-        data = None
-        while not data:
-            self.logger.debug("next")
-            try:
-                payload = next(self._chan)
-            except redis.ConnectionError as exc:
-                try:
-                    msg = exc.args[0]
-                except Exception:
-                    msg = ""
-                if msg.startswith(SERVER_CLOSED_CONNECTION_ERROR):
-                    # Redis disconnected, shutdown as gracefully as possible.
-                    # FIXME: Consider adding connection drop error handling, retry loop
-                    # re-establishing a connection, etc..
-                    self._pubsub = None
-                    raise RedisDisconnected()
-                else:
-                    raise
-            else:
-                self.logger.debug("next success")
+        for tmp_data in self._to_tms_chan.fetch_json(self.logger):
+            data = None
             msg = None
-            try:
-                json_str = payload["data"].decode("utf-8")
-                tmp_data = json.loads(json_str)
-            except Exception:
-                msg = f"data payload in message not JSON, {json_str!r}"
+            keys = frozenset(tmp_data.keys())
+            if keys != self._message_keys:
+                msg = f"unrecognized keys in data of payload in message, {tmp_data!r}"
+            elif tmp_data["action"] not in tm_allowed_actions:
+                msg = f"unrecognized action in data of payload in message, {tmp_data!r}"
+            elif tmp_data["group"] is not None and tmp_data["group"] != self._group:
+                msg = f"unrecognized group in data of payload in message, {tmp_data!r}"
             else:
-                keys = frozenset(tmp_data.keys())
-                if keys != self._message_keys:
-                    msg = (
-                        f"unrecognized keys in data of payload in message, {json_str!r}"
-                    )
-                elif tmp_data["action"] not in self._valid_actions:
-                    msg = f"unrecognized action in data of payload in message, {json_str!r}"
-                elif tmp_data["group"] is not None and tmp_data["group"] != self._group:
-                    msg = f"unrecognized group in data of payload in message, {json_str!r}"
-                else:
-                    data = tmp_data
-            finally:
-                if msg is not None:
-                    assert data is None
-                    self.logger.warning(msg)
-                    self._send_client_status(msg)
-        return data["action"], data
+                data = tmp_data
+            if msg is not None:
+                assert data is None, f"msg = {msg}, tmp_data = {tmp_data!r}"
+                self.logger.warning(msg)
+                self._send_client_status(msg)
+            else:
+                assert msg is None, f"msg = {msg}, tmp_data = {tmp_data!r}"
+                yield data["action"], data
 
     def wait_for_command(self):
         """wait_for_command - wait for the expected data message for the
@@ -565,29 +570,26 @@ class ToolMeister:
         state transition is encountered, and setting the next state properly.
         """
         self.logger.debug("%s: wait_for_command %s", self._hostname, self.state)
-        action, data = self._get_data()
-        action_method = None
-        while not action_method:
+        for action, data in self._gen_data():
             if action == "terminate":
                 self.logger.debug("%s: msg - %r", self._hostname, data)
-                raise Terminate()
+                break
             if action == "send":
-                action_method = self.send_tools
+                yield self.send_tools, data
                 continue
             if action == "sysinfo":
-                action_method = self.sysinfo
+                yield self.sysinfo, data
                 continue
             state_trans_rec = self._state_trans[action]
             if state_trans_rec["curr"] != self.state:
                 msg = f"ignoring unexpected data, {data!r}, in state '{self.state}'"
-                self.logger.info(msg)
+                self.logger.warning(msg)
                 self._send_client_status(msg)
-                action, data = self._get_data()
                 continue
             action_method = state_trans_rec["action"]
             self.state = state_trans_rec["next"]
-        self.logger.debug("%s: msg - %r", self._hostname, data)
-        return action_method, data
+            self.logger.debug("%s: msg - %r", self._hostname, data)
+            yield action_method, data
 
     def _send_client_status(self, status):
         """_send_client_status - convenience method to properly publish a
@@ -603,24 +605,25 @@ class ToolMeister:
         #     "hostname": "< the host name on which the ds or tm is running >",
         #     "status": "success|< a message to be displayed on error >"
         #   }
-        msg = dict(kind="tm", hostname=self._hostname, status=status)
-        self.logger.debug("publish tmc")
+        msg_d = dict(kind="tm", hostname=self._hostname, status=status)
+        msg = json.dumps(msg_d, sort_keys=True)
+        self.logger.debug("publish %s %s", self._from_tms_channel, msg)
         try:
-            num_present = self._rs.publish(
-                client_channel, json.dumps(msg, sort_keys=True)
-            )
+            num_present = self._rs.publish(self._from_tms_channel, msg)
         except Exception:
-            self.logger.exception("Failed to publish client status message")
+            self.logger.exception("Failed to publish client status message, %s", msg)
             ret_val = 1
         else:
-            self.logger.debug("published tmc")
             if num_present != 1:
                 self.logger.error(
-                    "client status message received by %d subscribers", num_present
+                    "client status message %s received by %d subscribers",
+                    msg,
+                    num_present,
                 )
                 ret_val = 1
             else:
-                self.logger.debug("posted client status, %r", status)
+                if status != "terminated":
+                    self.logger.debug("posted client status message, %s", msg)
                 ret_val = 0
         return ret_val
 
@@ -1110,14 +1113,11 @@ class ToolMeister:
             self._send_client_status(msg)
             return 1
 
-        args = data["args"]
-        if not args:
-            self._send_client_status("No sysinfo arguments given")
-            return 1
+        sysinfo_args = data["args"]
+        self.logger.debug("sysinfo args: %r", sysinfo_args)
+        if not sysinfo_args:
+            sysinfo_args = "none"
 
-        self.logger.debug("sysinfo: %r", args)
-        # FIXME - Should we perform more checking to validate the argument?
-        sysinfo = args[0]
         # FIXME - We need the label for this registered host
         label = ""
 
@@ -1147,12 +1147,14 @@ class ToolMeister:
         command = [
             self.sysinfo_dump,
             str(sysinfo_dir),
-            sysinfo,
+            sysinfo_args,
             label,
         ]
 
         self.logger.info("pbench-sysinfo-dump -- %s", " ".join(command))
 
+        failures = 0
+        msg = ""
         o_file = sysinfo_dir / "tm-sysinfo.out"
         e_file = sysinfo_dir / "tm-sysinfo.err"
         try:
@@ -1163,14 +1165,12 @@ class ToolMeister:
         except Exception as exc:
             msg = f"Failed to collect system information: {exc}"
             self.logger.exception(msg)
-            self._send_client_status(msg)
-            return 1
+            failures += 1
         else:
             if cp.returncode != 0:
                 msg = f"failed to collect system information; return code: {cp.returncode}"
                 self.logger.error(msg)
-                self._send_client_status(msg)
-                return 1
+                failures += 1
 
         if self._hostname == self._controller:
             self.logger.info(
@@ -1179,19 +1179,19 @@ class ToolMeister:
                 self._group,
                 sysinfo_dir,
             )
-            # Note that we don't have a directory to send when a Tool
-            # Meister runs on the same host as the controller.
-            self._send_client_status("success")
-            return 0
-
-        directory_bytes = data["directory"].encode("utf-8")
-        sysinfo_data_ctx = hashlib.md5(directory_bytes).hexdigest()
-        failures = self._send_directory(
-            sysinfo_dir / self._hostname, "sysinfo-data", sysinfo_data_ctx
-        )
+        else:
+            directory_bytes = data["directory"].encode("utf-8")
+            sysinfo_data_ctx = hashlib.md5(directory_bytes).hexdigest()
+            failures = self._send_directory(
+                sysinfo_dir / self._hostname, "sysinfo-data", sysinfo_data_ctx
+            )
 
         self._send_client_status(
-            "success" if failures == 0 else f"{failures} failures sending sysinfo data"
+            "success"
+            if failures == 0
+            else f"{failures} failures sending sysinfo data"
+            if not msg
+            else msg
         )
 
         return failures
@@ -1230,6 +1230,7 @@ def driver(
     tar_path,
     sysinfo_dump,
     pbench_bin,
+    tmp_dir,
     param_key,
     params,
     redis_server,
@@ -1243,8 +1244,11 @@ def driver(
 
     # Add a logging handler to send logs back to the Redis server, with each
     # log entry prepended with the given hostname parameter.
+    channel_prefix = params["channel_prefix"]
     rh = RedisHandler(
-        channel="tm-logging", hostname=params["hostname"], redis_client=redis_server
+        channel=f"{channel_prefix}-{tm_channel_suffix_to_logging}",
+        hostname=params["hostname"],
+        redis_client=redis_server,
     )
     if os.environ.get("_PBENCH_TOOL_MEISTER_LOG_LEVEL") == "debug":
         log_level = logging.DEBUG
@@ -1262,24 +1266,14 @@ def driver(
     #   a. handle graceful termination (TERM, INT, QUIT)
     #   b. log operational state (HUP maybe?)
 
-    try:
-        tm = ToolMeister(
-            pbench_bin, tar_path, sysinfo_dump, params, redis_server, logger
-        )
-    except Exception:
-        logger.exception(
-            "Unable to construct the ToolMeister object with params, %r", params,
-        )
-        return 8
-
     ret_val = 0
-    terminate = False
     try:
-        while not terminate:
-            try:
-                logger.debug("waiting ...")
-                action, data = tm.wait_for_command()
-                logger.debug("acting ... %r, %r", action, data)
+        with ToolMeister(
+            pbench_bin, tmp_dir, tar_path, sysinfo_dump, params, redis_server, logger
+        ) as tm:
+            logger.debug("waiting ...")
+            for action, data in tm.wait_for_command():
+                logger.debug("acting ... %s, %r", action.__name__, data)
                 failures = action(data)
                 if failures > 0:
                     logger.warning(
@@ -1288,21 +1282,17 @@ def driver(
                         action,
                         data,
                     )
-            except Terminate:
-                logger.info("terminating")
-                terminate = True
-            except RedisDisconnected:
-                logger.error("lost connection to redis server")
-                ret_val = 9
-                terminate = True
+                logger.debug("waiting ...")
     except Exception:
         logger.exception("Unexpected error encountered")
         ret_val = 10
     finally:
-        tm.cleanup()
-        if rh.errors > 0 or rh.redis_errors > 0:
+        if rh.errors > 0 or rh.redis_errors > 0 or rh.dropped > 0:
             logger.warning(
-                "RedisHandler redis_errors: %d, errors: %d", rh.errors, rh.redis_errors
+                "RedisHandler redis_errors: %d, errors: %d, dropped: %d",
+                rh.errors,
+                rh.redis_errors,
+                rh.dropped,
             )
     return ret_val
 
@@ -1312,6 +1302,7 @@ def daemon(
     tar_path,
     sysinfo_dump,
     pbench_bin,
+    tmp_dir,
     param_key,
     params,
     redis_server,
@@ -1349,6 +1340,7 @@ def daemon(
         #
         # We can safely re-create the ToolMeister object now that we are
         # "daemonized".
+        logger.debug("re-constructing Redis server object")
         try:
             # NOTE: we have to recreate the connection to the redis service
             # since all open file descriptors were closed as part of the
@@ -1361,7 +1353,7 @@ def daemon(
                 redis_port,
                 exc,
             )
-            return 7
+            return 8
         else:
             logger.debug("re-constructed Redis server object")
         return driver(
@@ -1369,6 +1361,7 @@ def daemon(
             tar_path,
             sysinfo_dump,
             pbench_bin,
+            tmp_dir,
             param_key,
             params,
             redis_server,
@@ -1422,19 +1415,26 @@ def main(argv):
         return 3
 
     try:
+        # The temporary directory to use for capturing all tool data.
+        tmp_dir = os.environ["pbench_tmp"]
+    except Exception as e:
+        print(f"Missing pbench_tmp environment variable: {e}", file=sys.stderr)
+        return 4
+
+    try:
         redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
     except Exception as exc:
         print(
             f"Unable to construct Redis client, {redis_host}:{redis_port}: {exc}",
             file=sys.stderr,
         )
-        return 4
+        return 5
 
     try:
         params_raw = redis_server.get(param_key)
         if params_raw is None:
             print(f'Parameter key, "{param_key}" does not exist.', file=sys.stderr)
-            return 5
+            return 6
         params_str = params_raw.decode("utf-8")
         params = json.loads(params_str)
         # Validate the tool meister parameters without constructing an object
@@ -1446,7 +1446,7 @@ def main(argv):
             f"Unable to fetch and decode parameter key, '{param_key}': {exc}",
             file=sys.stderr,
         )
-        return 6
+        return 7
 
     if daemonize == "yes":
         ret_val = daemon(
@@ -1454,6 +1454,7 @@ def main(argv):
             tar_path,
             sysinfo_dump,
             pbench_bin,
+            tmp_dir,
             param_key,
             params,
             redis_server,
@@ -1462,7 +1463,13 @@ def main(argv):
         )
     else:
         ret_val = driver(
-            PROG, tar_path, sysinfo_dump, pbench_bin, param_key, params, redis_server
+            PROG,
+            tar_path,
+            sysinfo_dump,
+            pbench_bin,
+            tmp_dir,
+            param_key,
+            params,
+            redis_server,
         )
-
     return ret_val

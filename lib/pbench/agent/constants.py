@@ -1,0 +1,42 @@
+"""Constants for the Tool Meister Redis instance.
+"""
+
+# Default port number used is "One Tool" in hex 0x17001
+redis_port = 17001
+
+# Default port number used for the Tool Data Sink
+tds_port = 8080
+
+# The name of the channel all Tool Meisters subscribe to, and the client
+# publishes to.
+cli_tm_channel_prefix = "pbench-agent-cli"
+
+# Channel suffixes to and from the client with the Tool Data Sink
+tm_channel_suffix_to_client = "to-client"
+tm_channel_suffix_from_client = "from-client"
+# Channel suffixes to and from the Tool Meisters with the Tool Data Sink
+tm_channel_suffix_to_tms = "to-tms"
+tm_channel_suffix_from_tms = "from-tms"
+# Channel suffix for the Tool Meister logging channel
+tm_channel_suffix_to_logging = "to-logging"
+
+# List of allowed actions
+cli_tm_allowed_actions = frozenset(("start", "stop", "send"))
+
+# List of API allowed actions
+api_tm_allowed_actions = cli_tm_allowed_actions | frozenset(("end", "init", "sysinfo"))
+
+# List of all allowed actions
+tm_allowed_actions = api_tm_allowed_actions | frozenset(("terminate",))
+
+# The list of convenience names for specifying sysinfo behviors.
+sysinfo_opts_convenience = frozenset(("all", "default", "none"))
+
+# The default set of system configuration information collected.
+sysinfo_opts_default = frozenset(
+    ("block", "kernel_config", "libvirt", "security_mitigations", "sos", "topology")
+)
+# All of the available system configuration items that could be collected.
+sysinfo_opts_available = sysinfo_opts_default | frozenset(
+    ("ara", "insights", "stockpile")
+)

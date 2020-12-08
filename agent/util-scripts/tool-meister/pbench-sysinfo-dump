@@ -1,39 +1,40 @@
 #!/bin/bash
 # -*- mode: shell-script; indent-tabs-mode: t; sh-basic-offset: 8; sh-indentation: 8; sh-indent-for-case-alt: + -*-
 
-script_path=`dirname $0`
-script_name=`basename $0`
-pbench_bin="`cd ${script_path}/..; /bin/pwd`"
-sysinfo=$2
+script_path="$(dirname ${0})"
+script_name="$(basename ${0})"
+pbench_bin="$(realpath -e ${script_path}/../..)"
 
 # source the base script
-. "$pbench_bin"/base
+. "${pbench_bin}"/base
 
-dir=$(readlink -f $1 2>/dev/null)
-if [[ $? -ne 0 ]]; then
-	error_log "You must provide a directory that exists, \"$1\" is not a real path"
+dir="$(readlink -f ${1} 2>/dev/null)"
+if [[ ${?} -ne 0 ]]; then
+	error_log "You must provide a directory that exists, \"${1}\" is not a real path"
 	exit 1
 fi
-if [[ ! -d "$dir" ]]; then
-	error_log "You must provide a directory that exists, \"$dir\" does not"
+if [[ ! -d "${dir}" ]]; then
+	error_log "You must provide a directory that exists, \"${dir}\" does not"
 	exit 1
 fi
 
-label=$3
-if [[ -z "$label" ]]; then
+sysinfo="${2}"
+
+label="${3}"
+if [[ -z "${label}" ]]; then
 	dir="${dir}/${_pbench_full_hostname}"
 else
 	dir="${dir}/${label}:${_pbench_full_hostname}"
 fi
-mkdir -p $dir
-if [[ ! -d "$dir" ]]; then
-	error_log "Failed to create the sysinfo directory, \"$dir\""
+mkdir -p ${dir}
+if [[ ! -d "${dir}" ]]; then
+	error_log "Failed to create the sysinfo directory, \"${dir}\""
 	exit 1
 fi
 
 # generate inventory file with controller and remotes
-export INVENTORY=/tmp/inventory.$$
-trap "rm -f $INVENTORY" QUIT INT EXIT
+export INVENTORY=/tmp/inventory.${$}
+trap "rm -f ${INVENTORY}" QUIT INT EXIT
 
 function collect_kernel_config {
 	if [[ -e /boot/config-$(uname -r) ]] ;then
