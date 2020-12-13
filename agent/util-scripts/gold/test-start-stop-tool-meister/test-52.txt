@@ -112,8 +112,8 @@ DEBUG pbench-tool-data-sink __enter__ -- web server 'run' thread started, proces
 INFO pbench-tool-data-sink tm_log_capture -- Running Tool Meister log capture ...
 DEBUG pbench-tool-data-sink __enter__ -- 'tm_log_capture' thread started, processing logs ...
 DEBUG pbench-tool-data-sink fetch_message -- next pbench-agent-cli-from-tms
-DEBUG pbench-tool-data-sink fetch_message -- payload from pbench-agent-cli-from-tms: {'type': 'message', 'pattern': None, 'channel': b'pbench-agent-cli-from-tms', 'data': b'{"hostname": "testhost.example.com", "hostname_A": "agent.example.com", "hostname_I": "agent.example.com", "hostname_f": "agent.example.com", "hostname_i": "agent.example.com", "hostname_s": "agent.example.com", "installs": {"mpstat": [0, "mpstat: pbench-sysstat-12.0.3 is installed\\n"], "perf": [0, "perf: perf is installed\\n"]}, "kind": "tm", "pid": NNNNN, "seqno": "", "sha1": "(unknown)", "version": "(unknown)"}'}
-DEBUG pbench-tool-data-sink fetch_message -- channel pbench-agent-cli-from-tms payload, '{"hostname": "testhost.example.com", "hostname_A": "agent.example.com", "hostname_I": "agent.example.com", "hostname_f": "agent.example.com", "hostname_i": "agent.example.com", "hostname_s": "agent.example.com", "installs": {"mpstat": [0, "mpstat: pbench-sysstat-12.0.3 is installed\\n"], "perf": [0, "perf: perf is installed\\n"]}, "kind": "tm", "pid": NNNNN, "seqno": "", "sha1": "(unknown)", "version": "(unknown)"}'
+DEBUG pbench-tool-data-sink fetch_message -- payload from pbench-agent-cli-from-tms: {'type': 'message', 'pattern': None, 'channel': b'pbench-agent-cli-from-tms', 'data': b'{"hostname": "testhost.example.com", "hostname_A": "agent.example.com", "hostname_I": "agent.example.com", "hostname_f": "agent.example.com", "hostname_i": "agent.example.com", "hostname_s": "agent.example.com", "installs": {"mpstat": [0, "mpstat: pbench-sysstat-12.0.3 is installed"], "perf": [0, "perf: perf is installed"]}, "kind": "tm", "pid": NNNNN, "seqno": "", "sha1": "(unknown)", "version": "(unknown)"}'}
+DEBUG pbench-tool-data-sink fetch_message -- channel pbench-agent-cli-from-tms payload, '{"hostname": "testhost.example.com", "hostname_A": "agent.example.com", "hostname_I": "agent.example.com", "hostname_f": "agent.example.com", "hostname_i": "agent.example.com", "hostname_s": "agent.example.com", "installs": {"mpstat": [0, "mpstat: pbench-sysstat-12.0.3 is installed"], "perf": [0, "perf: perf is installed"]}, "kind": "tm", "pid": NNNNN, "seqno": "", "sha1": "(unknown)", "version": "(unknown)"}'
 DEBUG pbench-tool-data-sink execute -- publish pbench-agent-cli-to-client
 DEBUG pbench-tool-data-sink execute -- published pbench-agent-cli-to-client
 DEBUG pbench-tool-data-sink fetch_message -- next pbench-agent-cli-from-client
@@ -192,7 +192,7 @@ DEBUG pbench-tool-meister fetch_message -- channel pbench-agent-cli-to-tms paylo
 DEBUG pbench-tool-meister wait_for_command -- testhost.example.com: msg - {'action': 'init', 'args': None, 'directory': '/var/tmp/pbench-test-utils/pbench/mock-run/tools-mygroup', 'group': 'mygroup'}
 DEBUG pbench-tool-meister driver -- acting ... init_tools, {'action': 'init', 'args': None, 'directory': '/var/tmp/pbench-test-utils/pbench/mock-run/tools-mygroup', 'group': 'mygroup'}
 DEBUG pbench-tool-meister _send_client_status -- publish pbench-agent-cli-from-tms {"hostname": "testhost.example.com", "kind": "tm", "status": "success"}
-DEBUG pbench-tool-meister _send_client_status -- posted client status message, {"hostname": "testhost.example.com", "kind": "tm", "status": "success"}
+DEBUG pbench-tool-meister _send_client_status -- posted client status message, '{"hostname": "testhost.example.com", "kind": "tm", "status": "success"}'
 DEBUG pbench-tool-meister driver -- waiting ...
 DEBUG pbench-tool-meister fetch_message -- next pbench-agent-cli-to-tms
 DEBUG pbench-tool-meister fetch_message -- payload from pbench-agent-cli-to-tms: {'type': 'message', 'pattern': None, 'channel': b'pbench-agent-cli-to-tms', 'data': b'{"action": "end", "args": null, "directory": "/var/tmp/pbench-test-utils/pbench/mock-run/tools-mygroup", "group": "mygroup"}'}
@@ -200,7 +200,7 @@ DEBUG pbench-tool-meister fetch_message -- channel pbench-agent-cli-to-tms paylo
 DEBUG pbench-tool-meister wait_for_command -- testhost.example.com: msg - {'action': 'end', 'args': None, 'directory': '/var/tmp/pbench-test-utils/pbench/mock-run/tools-mygroup', 'group': 'mygroup'}
 DEBUG pbench-tool-meister driver -- acting ... end_tools, {'action': 'end', 'args': None, 'directory': '/var/tmp/pbench-test-utils/pbench/mock-run/tools-mygroup', 'group': 'mygroup'}
 DEBUG pbench-tool-meister _send_client_status -- publish pbench-agent-cli-from-tms {"hostname": "testhost.example.com", "kind": "tm", "status": "success"}
-DEBUG pbench-tool-meister _send_client_status -- posted client status message, {"hostname": "testhost.example.com", "kind": "tm", "status": "success"}
+DEBUG pbench-tool-meister _send_client_status -- posted client status message, '{"hostname": "testhost.example.com", "kind": "tm", "status": "success"}'
 DEBUG pbench-tool-meister driver -- waiting ...
 DEBUG pbench-tool-meister fetch_message -- next pbench-agent-cli-to-tms
 DEBUG pbench-tool-meister fetch_message -- payload from pbench-agent-cli-to-tms: {'type': 'message', 'pattern': None, 'channel': b'pbench-agent-cli-to-tms', 'data': b'{"action": "terminate", "args": {"interrupt": false}, "directory": null, "group": "mygroup"}'}
@@ -224,7 +224,7 @@ testhost.example.com 0007 DEBUG pbench-tool-meister fetch_message -- channel pbe
 testhost.example.com 0008 DEBUG pbench-tool-meister wait_for_command -- testhost.example.com: msg - {'action': 'init', 'args': None, 'directory': '/var/tmp/pbench-test-utils/pbench/mock-run/tools-mygroup', 'group': 'mygroup'}
 testhost.example.com 0009 DEBUG pbench-tool-meister driver -- acting ... init_tools, {'action': 'init', 'args': None, 'directory': '/var/tmp/pbench-test-utils/pbench/mock-run/tools-mygroup', 'group': 'mygroup'}
 testhost.example.com 0010 DEBUG pbench-tool-meister _send_client_status -- publish pbench-agent-cli-from-tms {"hostname": "testhost.example.com", "kind": "tm", "status": "success"}
-testhost.example.com 0011 DEBUG pbench-tool-meister _send_client_status -- posted client status message, {"hostname": "testhost.example.com", "kind": "tm", "status": "success"}
+testhost.example.com 0011 DEBUG pbench-tool-meister _send_client_status -- posted client status message, '{"hostname": "testhost.example.com", "kind": "tm", "status": "success"}'
 testhost.example.com 0012 DEBUG pbench-tool-meister driver -- waiting ...
 testhost.example.com 0013 DEBUG pbench-tool-meister fetch_message -- next pbench-agent-cli-to-tms
 testhost.example.com 0014 DEBUG pbench-tool-meister fetch_message -- payload from pbench-agent-cli-to-tms: {'type': 'message', 'pattern': None, 'channel': b'pbench-agent-cli-to-tms', 'data': b'{"action": "end", "args": null, "directory": "/var/tmp/pbench-test-utils/pbench/mock-run/tools-mygroup", "group": "mygroup"}'}
@@ -232,7 +232,7 @@ testhost.example.com 0015 DEBUG pbench-tool-meister fetch_message -- channel pbe
 testhost.example.com 0016 DEBUG pbench-tool-meister wait_for_command -- testhost.example.com: msg - {'action': 'end', 'args': None, 'directory': '/var/tmp/pbench-test-utils/pbench/mock-run/tools-mygroup', 'group': 'mygroup'}
 testhost.example.com 0017 DEBUG pbench-tool-meister driver -- acting ... end_tools, {'action': 'end', 'args': None, 'directory': '/var/tmp/pbench-test-utils/pbench/mock-run/tools-mygroup', 'group': 'mygroup'}
 testhost.example.com 0018 DEBUG pbench-tool-meister _send_client_status -- publish pbench-agent-cli-from-tms {"hostname": "testhost.example.com", "kind": "tm", "status": "success"}
-testhost.example.com 0019 DEBUG pbench-tool-meister _send_client_status -- posted client status message, {"hostname": "testhost.example.com", "kind": "tm", "status": "success"}
+testhost.example.com 0019 DEBUG pbench-tool-meister _send_client_status -- posted client status message, '{"hostname": "testhost.example.com", "kind": "tm", "status": "success"}'
 testhost.example.com 0020 DEBUG pbench-tool-meister driver -- waiting ...
 testhost.example.com 0021 DEBUG pbench-tool-meister fetch_message -- next pbench-agent-cli-to-tms
 testhost.example.com 0022 DEBUG pbench-tool-meister fetch_message -- payload from pbench-agent-cli-to-tms: {'type': 'message', 'pattern': None, 'channel': b'pbench-agent-cli-to-tms', 'data': b'{"action": "terminate", "args": {"interrupt": false}, "directory": null, "group": "mygroup"}'}

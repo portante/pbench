@@ -7,18 +7,18 @@ Responsible for orchestrating the Redis Server, Tool Data Sink (TDS), and Tool
 Meisters (TMs):
 
    1. Loading tool group data for the requested tool group
-   2. Starting a Redis server and creating the Redis channel for TDS to talk
-      to a client
+   2. Starting a Redis server and creating the Redis channel for the TDS to
+      talk to the client
       - <prefix>-to-client
       - TDS publishes, a client subscribes
       - This is how TDS tells a client the success or failure of the actions
-   3. Pushing the loaded tool group data and metadata into the redis server
+   3. Pushing the loaded tool group data and metadata into the Redis server
    4. Starting the Tool Data Sink process
    5. Starting all the local and remote Tool Meisters
    6. Waiting for the TDS to send a message reporting that it, and all the TMs
       started
-      - The TDS knows about all the TMs that were started by virtue of all the
-        tool group data loaded into the Redis server for each TM
+      - The TDS knows all the TMs that were started from the registered tools
+        data structure argument
 
 There is a specific flow of data between these various components.  This
 command, `pbench-tool-meister-start`, waits on the "<prefix>-to-client"
@@ -35,15 +35,20 @@ channel.
 
 Summary of the other Redis pub/sub channels:
 
-   1. "<prefix>-from-client" channel for a client to talk to TDS
-      - TDS subscribes, a client publishes
-      - This is the one used to send the various actions from the client
+   1. "<prefix>-to-client" channel for the TDS to talk to a client
+      - a client subscribes, the TDS publishes
+      - This is used by the TDS to report success or failure of an action to
+        a client
 
-   2. "<prefix>-to-tms" channel for TDS to talk to TMs
+   2. "<prefix>-from-client" channel for a client to talk to the TDS
+      - TDS subscribes, a client publishes
+      - This is used to send the various actions from the client to the TDS
+
+   3. "<prefix>-to-tms" channel for the TDS to talk to TMs
        - TMs subscribe, TDS publishes
        - This is how the TDS forwards actions to the TMs
 
-   3. "<prefix>-from-tms" channel for TMs to talk to the TDS
+   4. "<prefix>-from-tms" channel for TMs to talk to the TDS
        - TMs publish, TDS subscribes
        - This is how TMs tell the TDS the success or failure of their actions
 
@@ -112,7 +117,8 @@ class ToolGroup:
     """
 
     def __init__(self, group):
-        """Construct a ToolGroup object from the given tool group.
+        """Construct a ToolGroup object from the on-disk data of the given
+        tool group.
 
         If the given tool group is valid, the contents are read into the three
         dictionary structures:
@@ -121,10 +127,11 @@ class ToolGroup:
           for each registered host
 
           "hostnames" - each registered host is the key, with separate
-          dictionaries for each tool registered on that host.
+          dictionaries for each tool registered on that host
 
           "labels" - each registered host name, that has a label, is the key,
-          and the label as the value.
+          and the label as the value; if a host is not labeled, it does not
+          show up in this dictionary
 
         Raises BadToolGroup via the verify_tool_group() method on error.
         """
@@ -348,7 +355,7 @@ def main(_prog, parsed):
         return 3
     except Exception as exc:
         logger.error(
-            "Unexpected error encountered logging pbench agent configuration: '%s'", exc
+            "Unexpected error encountered loading pbench agent configuration: '%s'", exc
         )
         return 4
     else:
@@ -533,7 +540,7 @@ def main(_prog, parsed):
             tool_metadata=tool_metadata.getFullData(),
             tools=tools,
         )
-        # Create a separate key the Tool Meister that will be on that host
+        # Create a separate key for the Tool Meister that will be on that host
         #
         # FIXME: we ought to support tool registration by label, and label
         # host names instead.
@@ -765,7 +772,7 @@ def main(_prog, parsed):
     if ret_val != 0:
         return kill_redis_server(redis_pid, 7000)
 
-    # For a Client API object using our existing to_client_chan object to
+    # Setup a Client API object using our existing to_client_chan object to
     # drive the following client operations ("sysinfo" [optional] and "init"
     # [required]).
     with Client(

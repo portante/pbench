@@ -378,7 +378,9 @@ class ToolDataSink(Bottle):
         )
         self.web_server_thread = Thread(target=self.web_server_run)
         self.web_server_thread.start()
-        time.sleep(0.1)  # FIXME - ugly hack for consistent unit tests
+        # FIXME - ugly hack for consistent unit tests; why not just use a
+        # condition variable?
+        time.sleep(0.1)
         self.logger.debug("web server 'run' thread started, processing payloads ...")
 
         # Setup the two Redis channels to which the Tool Data Sink subscribes.
@@ -396,7 +398,9 @@ class ToolDataSink(Bottle):
 
         self.tm_log_capture_thread = Thread(target=self.tm_log_capture)
         self.tm_log_capture_thread.start()
-        time.sleep(0.1)  # FIXME - ugly hack for consistent unit tests
+        # FIXME - ugly hack for consistent unit tests; why not just use a
+        # condition variable?
+        time.sleep(0.1)
         self.logger.debug("'tm_log_capture' thread started, processing logs ...")
 
         # The ToolDataSink object itself is the object of the context manager.
@@ -445,8 +449,8 @@ class ToolDataSink(Bottle):
         """
         self.logger.info("Running Tool Meister log capture ...")
         # Create a separate logger so that the fetch_message() code only logs
-        # warnings and errors to stdout/stderr if problems when handling logs
-        # from remote Tool Meisters.
+        # warnings and errors to stdout/stderr when problems occur handling
+        # logs from remote Tool Meisters.
         logger = logging.getLogger("tm_log_capture_thread")
         logger.setLevel(logging.WARNING)
         tm_log_file = self.benchmark_run_dir / "tm" / "tm.logs"
@@ -459,7 +463,7 @@ class ToolDataSink(Bottle):
                 # We don't bother reporting any connection errors.
                 pass
             except ValueError as exc:
-                print(f"exc.args = {exc.args!r}", file=sys.stderr)
+                # FIXME - Why do we need to do this?
                 if exc.args[0] == "I/O operation on closed file.":
                     pass
                 raise
@@ -537,8 +541,8 @@ class ToolDataSink(Bottle):
         the startup acknowledgement messages collected in "tms".
 
         The first thing we have to do is setup self._tm_tracking properly,
-        adding the which tools are no-ops, transient, and persistent, and
-        properly record the initial "posted" state.
+        adding which tools are no-ops, transient, and persistent, and properly
+        record the initial "posted" state.
 
         The second thing we do is record all the data and metadata about the
         Tool Meisters in the ${benchmark_run_dir}/metadata.log file.
@@ -722,9 +726,9 @@ class ToolDataSink(Bottle):
         try:
             # At this point, all the Tool Meisters started by the external
             # orchestrator will publish a message on the "<prefix>-from-tms"
-            # channel that they have started, including additional metadata
-            # about their operation.  We need to wait for the TMs to all
-            # report in now.
+            # channel indicating they have started, including additional
+            # metadata about their operation.  We need to wait for the TMs to
+            # all report in now.
             tms = self.wait_for_initial_tms()
 
             # Record the collected information about the Tool Meisters in the
@@ -732,8 +736,8 @@ class ToolDataSink(Bottle):
             self._tm_tracking = self.record_tms(tms)
             self._num_tms = len(self._tm_tracking.keys())
 
-            # Tell the entity that started us who we are indicating we're
-            # ready.
+            # Tell the entity that started us who we are, indicating we're
+            # ready, and all the TMs are ready.
             started_msg = dict(kind="ds", action="startup", status="success")
             self.logger.debug("publish %s", self._to_client_channel)
             num_present = self.redis_server.publish(
@@ -766,10 +770,6 @@ class ToolDataSink(Bottle):
         Waiting is a no-op for all actions except the "data actions" (see
         self._data_actions).  For a "data" action, we are expecting to hear from
         all registered tool meisters.
-
-        FIXME: we need to listen for each the client status from Tool Meister
-        to ensure we don't wait for Tool Meisters which will not send any
-        data.
         """
         assert (
             self.action in self._data_actions
@@ -815,7 +815,8 @@ class ToolDataSink(Bottle):
             tm["posted"] = new
 
     def _forward_tms(self, data):
-        """_forward_tms - for the action data payload to the known Tool Meisters.
+        """_forward_tms - forward the action data payload to the known Tool
+        Meisters.
 
         Log messages will be posted if any errors were encountered.
 
@@ -847,8 +848,7 @@ class ToolDataSink(Bottle):
 
         Returns 0 on success, non-zero to indicate an error.
         """
-        # Wait for an operational status message from the Tool Data Sink
-        # reporting the combined response of the Tool Meisters.
+        # Wait for all Tool Meisters to report back their operational status.
         ret_val = 0
         done_count = 0
         for data in self._from_tms_chan.fetch_json(self.logger):
@@ -873,8 +873,8 @@ class ToolDataSink(Bottle):
         return ret_val
 
     def _forward_tms_and_wait(self, data):
-        """_forward_tms_and_wait - simple wrapper to perform the typical of
-        forwarding the action payload to the Tool Meisters and then waiting
+        """_forward_tms_and_wait - simple wrapper to perform the typical steps
+        of forwarding the action payload to the Tool Meisters and then waiting
         for their response.
 
         Returns the return value of either _forward_tms() or _wait_for_tms().
@@ -885,8 +885,8 @@ class ToolDataSink(Bottle):
         return ret_val
 
     def execute_action(self, action, directory_str, args, data):
-        """execute_action - give an action, directory string, arguments, and a
-        data dictionary, execute the sequence of steps required for the given
+        """execute_action - given an action, directory string, arguments, and
+        a data dictionary, execute the sequence of steps required for that
         action.
 
         The "watcher" thread has already validated the action field, we then
@@ -1119,11 +1119,7 @@ class ToolDataSink(Bottle):
                 abort(400, "Missing required content-length header")
             else:
                 if content_length > _MAX_TOOL_DATA_SIZE:
-                    abort(
-                        400,
-                        "Content object too large, keep it at 1 GB"
-                        f" ({content_length:d}) and  under",
-                    )
+                    abort(400, "Content object too large")
                 remaining_bytes = content_length
 
             try:

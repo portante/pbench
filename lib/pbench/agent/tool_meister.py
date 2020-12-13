@@ -62,6 +62,7 @@ from pbench.agent.constants import (
     tm_channel_suffix_to_tms,
     tm_channel_suffix_from_tms,
     tm_channel_suffix_to_logging,
+    TDS_RETRY_PERIOD_SECS,
 )
 from pbench.agent.redis import RedisHandler, RedisChannelSubscriber
 from pbench.agent.toolmetadata import ToolMetadata
@@ -194,7 +195,7 @@ class Tool:
 
     def install(self):
         """Synchronously runs the tool --install mode capturing the return code and
-        output, returing them as a tuple to the caller.
+        output, returning them as a tuple to the caller.
         """
         args = [
             f"{self.pbench_bin}/tool-scripts/{self.name}",
@@ -209,7 +210,7 @@ class Tool:
             stderr=subprocess.STDOUT,
             universal_newlines=True,
         )
-        return (cp.returncode, cp.stdout)
+        return (cp.returncode, cp.stdout.strip())
 
     def start(self):
         """Creates the background process running the tool's "start" operation.
@@ -240,7 +241,7 @@ class Tool:
             )
 
         # Before we "stop" a tool, check to see if a "{tool}/{tool}.pid" file
-        # exists.  If it doesn't wait for a second to show up, if after a
+        # exists.  If it doesn't, wait for a second to show up, if after a
         # second it does not show up, then give up waiting and just call the
         # stop method.
         tool_pid_file = self.tool_dir / self.name / f"{self.name}.pid"
@@ -404,7 +405,11 @@ class ToolMeister:
     def __init__(
         self, pbench_bin, tmp_dir, tar_path, sysinfo_dump, params, redis_server, logger
     ):
-        # Squirrel away constructor parameters
+        """Constructor for the ToolMeister object - sets up the internal state
+        given the constructor parameters, setting up the state transition
+        table, and forming the various channel names from the channel prefix
+        in the params object.
+        """
         self.pbench_bin = pbench_bin
         self._tmp_dir = tmp_dir
         self.tar_path = tar_path
@@ -460,8 +465,8 @@ class ToolMeister:
         # The "tool directory" is the current directory in use by running
         # tools for storing their collected data.
         self._tool_dir = None
-        # The operational Redis "pub-sub" subscriber object filled in by
-        # context manager.
+        # The operational Redis channel the TDS will use to send actions to
+        # the Tool Meisters, filled in later by the context manager.
         self._to_tms_chan = None
 
     def __enter__(self):
@@ -490,6 +495,7 @@ class ToolMeister:
                     self._tool_dir,
                     self.logger,
                 )
+                # FIXME - consider running these in parallel.
                 tool_installs[name] = tool.install()
             except Exception:
                 self.logger.exception("Failed to run tool %s install check", name)
@@ -513,7 +519,7 @@ class ToolMeister:
         # Tell the entity that started us who we are, indicating we're ready.
         self.logger.debug("publish %s", self._from_tms_channel)
         num_present = 0
-        timeout = time.time() + 60
+        timeout = time.time() + TDS_RETRY_PERIOD_SECS
         while num_present == 0:
             num_present = self._rs.publish(
                 self._from_tms_channel, json.dumps(started_msg, sort_keys=True)
@@ -526,8 +532,8 @@ class ToolMeister:
         return self
 
     def __exit__(self, *args):
-        """Exit context manager method - close down the Redis pubsub object if
-        it exists.
+        """Exit context manager method - close down the "to-tms" Redis channel,
+        and send the final terminated status to the Tool Data Sink.
         """
         self.logger.info("%s: terminating", self._hostname)
         self._to_tms_chan.close()
@@ -611,19 +617,19 @@ class ToolMeister:
         try:
             num_present = self._rs.publish(self._from_tms_channel, msg)
         except Exception:
-            self.logger.exception("Failed to publish client status message, %s", msg)
+            self.logger.exception("Failed to publish client status message, %r", msg)
             ret_val = 1
         else:
             if num_present != 1:
                 self.logger.error(
-                    "client status message %s received by %d subscribers",
+                    "client status message %r received by %d subscribers",
                     msg,
                     num_present,
                 )
                 ret_val = 1
             else:
                 if status != "terminated":
-                    self.logger.debug("posted client status message, %s", msg)
+                    self.logger.debug("posted client status message, %r", msg)
                 ret_val = 0
         return ret_val
 

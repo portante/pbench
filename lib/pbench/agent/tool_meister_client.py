@@ -3,8 +3,9 @@
 """tool_meister_client API
 
 The Tool Meister Client API encapsulates the steps required to send a message
-to the Tool Meisters, and Tool Data Sink, and process the responses to arrive
-at success or failure.
+to the Tool Data Sink with the action to be taken by the Tool Meisters,
+processing the response that arrives from the Tool Data Sink for success or
+failure.
 
 A client is really only sending a message to the Tool Data Sink.  The Tool
 Data Sink, in turn, coordinates all the behaviors related to the given action
@@ -69,8 +70,7 @@ class Client:
             self.logger = logger
 
     def __enter__(self):
-        """On context entry, setup the connection with the Redis server and discover
-        what Tool Meisters are out there.
+        """On context entry, setup the connection with the Redis server.
         """
         if self.redis_server is None:
             self.logger.debug("constructing Redis() object")
@@ -110,15 +110,15 @@ class Client:
         """
         if action not in api_tm_allowed_actions:
             return 1
-        # The published message contains three pieces of information:
+        # The published message contains four pieces of information:
         #   {
         #     "action": "< 'start' | 'stop' | 'send' | 'kill' >",
         #     "group": "< the tool group name for the tools to operate on >",
         #     "directory": "< the local directory path to store collected data >"
-        #     "args": "<arbitrary argument payload for a particular action>"
+        #     "args": "< arbitrary argument payload for a particular action >"
         #   }
         # The caller of tool-meister-client must be sure the directory argument
-        # is accessible by the tool-data-sink.
+        # is accessible by the Tool Data Sink instance.
         self.logger.debug("publish %s on chan %s", action, self.from_client_channel)
         msg = dict(action=action, group=group, directory=str(directory), args=args)
         try:

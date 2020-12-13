@@ -44,7 +44,7 @@ def main(_prog, parsed):
 
     1. End ("end") the run of the persistent tools
 
-    2. Collect the system configuration information ("sysinfo")
+    2. Collect any requested system configuration information ("sysinfo")
 
     3. Record in the local metadata.log file all relevant metadata from the
     stop operation, including the timing to end the persistent tools, the
@@ -135,6 +135,7 @@ def main(_prog, parsed):
                 'failed to create tool output directory, "{}": {}', tool_dir, exc
             )
         else:
+            # FIXME - check return status.
             client.publish(group, tool_dir, "end", None)
         # Next we collect the system configuration information
         if sysinfo:
@@ -149,6 +150,7 @@ def main(_prog, parsed):
             else:
                 logger.info("Collecting system information")
                 info_log("Collecting system information")
+                # FIXME - check return status.
                 client.publish(group, sysinfo_path, "sysinfo", sysinfo)
 
         # Finally we terminate the running Tool Data Sinks and the Tool
@@ -232,7 +234,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--interrupt",
         action="store_true",
-        help="Whethere or not the stop operation is in response to an interrupt.",
+        help="Whether or not the stop operation is in response to an interrupt.",
     )
     parser.add_argument(
         "tool_group", help="The tool group of items being run in the Tool Meisters."

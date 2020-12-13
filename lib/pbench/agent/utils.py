@@ -59,6 +59,11 @@ def run_command(args, env=None, name=None, logger=None):
 
 
 def _log_date():
+    """_log_data - helper function to mimick previous bash code behaviors
+
+    Returns an ISO format date string of the current time.  If running in
+    a unit test environment, returns a fixed date string.
+    """
     if os.environ.get("_PBENCH_UNIT_TESTS", "0") == "1":
         log_date = "1900-01-01T00:00:00.000000"
     else:
@@ -67,28 +72,46 @@ def _log_date():
 
 
 def _pbench_log(message):
+    """_pbench_log - helper function for logging to the ${pbench_log} file.
+    """
     with open(os.environ["pbench_log"], "a+") as fp:
         print(message, file=fp)
 
 
 def warn_log(msg):
+    """warn_log - mimick previous bash behavior of writing warning logs to
+    both stderr and the ${pbench_log} file.
+    """
     message = f"[warn][{_log_date()}] {msg}"
     print(message, file=sys.stderr)
     _pbench_log(message)
 
 
 def error_log(msg):
+    """error_log - mimick previous bash behavior of writing error logs to
+    both stderr and the ${pbench_log} file.
+    """
     message = f"[error][{_log_date()}] {msg}"
     print(message, file=sys.stderr)
     _pbench_log(message)
 
 
 def info_log(msg):
+    """info_log - mimick previous bash behavior of writing info logs to
+    the ${pbench_log} file.
+    """
     message = f"[info][{_log_date()}] {msg}"
     _pbench_log(message)
 
 
 def verify_sysinfo(sysinfo):
+    """verify_sysinfo - given a sysinfo argument, which can be a comma
+    separated list of accepted sysinfo names, verifies all the names are
+    valid, expanding the short-hands for "all", "default", and "none".
+
+    Returns two lists: the list of accepted sysinfo items, and the list of bad
+    sysinfo items.
+    """
     if sysinfo == "default":
         return sorted(list(sysinfo_opts_default)), []
     elif sysinfo == "all":
@@ -115,6 +138,13 @@ def verify_sysinfo(sysinfo):
 
 
 def collect_local_info(pbench_bin):
+    """collect_local_info - helper method encapsulating the local information
+    (metadata) about the environment where an entity is running.
+
+    Returns a tuple of four items: the pbench agent version, build sequence
+    number, and sha1 hash of the commit installed, and the array out output
+    from running the hostname command with different options.
+    """
     try:
         version = (pbench_bin / "VERSION").read_text()
     except Exception:

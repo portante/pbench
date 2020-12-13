@@ -1,14 +1,16 @@
-"""Constants for the Tool Meister Redis instance.
+"""Constants for the Pbench Agent.
 """
 
-# Default port number used is "One Tool" in hex 0x17001
+# Default Redis server port number used is "One Tool" in hex 0x17001
 redis_port = 17001
 
 # Default port number used for the Tool Data Sink
 tds_port = 8080
 
-# The name of the channel all Tool Meisters subscribe to, and the client
-# publishes to.
+# The amount of time a TM tries to publish its setup message.
+TDS_RETRY_PERIOD_SECS = 60
+
+# Prefix name for all channels used by Tool Meisters and the Tool Data Sink.
 cli_tm_channel_prefix = "pbench-agent-cli"
 
 # Channel suffixes to and from the client with the Tool Data Sink
@@ -20,7 +22,7 @@ tm_channel_suffix_from_tms = "from-tms"
 # Channel suffix for the Tool Meister logging channel
 tm_channel_suffix_to_logging = "to-logging"
 
-# List of allowed actions
+# List of allowed actions from the Pbench Agent CLI commands.
 cli_tm_allowed_actions = frozenset(("start", "stop", "send"))
 
 # List of API allowed actions
@@ -29,7 +31,7 @@ api_tm_allowed_actions = cli_tm_allowed_actions | frozenset(("end", "init", "sys
 # List of all allowed actions
 tm_allowed_actions = api_tm_allowed_actions | frozenset(("terminate",))
 
-# The list of convenience names for specifying sysinfo behviors.
+# The list of convenience names for specifying sysinfo behaviors.
 sysinfo_opts_convenience = frozenset(("all", "default", "none"))
 
 # The default set of system configuration information collected.

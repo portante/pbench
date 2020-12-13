@@ -1,12 +1,32 @@
+"""Tool Metadata module
+
+Classes for working with and manipulating the tool-scripts/meta.json file.
+"""
 import json
 
 
 class ToolMetadataError(Exception):
+    """ToolMetadataError - simple excepiton class for all exceptions raised by the
+    ToolMetadata class.
+    """
+
     pass
 
 
 class ToolMetadata:
+    """ToolMetadata - an in-memory representation of the on-disk meta.json file
+    for tool metadata.
+    """
+
     def __init__(self, inst_dir=None):
+        """Constructor for a ToolMetadata object.
+
+        Accepts an optional installation directory.  If one is not provided,
+        then the two attributes of _json_path and _data are set to None.  When
+        an installation directory is provided, the constructor loads the JSON
+        data from {inst_dir}/tool-scripts/meta.json and validates it before
+        finishing the object construction.
+        """
         if inst_dir is None:
             self._json_path = None
             self._data = None
@@ -32,6 +52,9 @@ class ToolMetadata:
 
     @staticmethod
     def _validate_metadata(metadata):
+        """_validate_metadata - state method for validating the metadata dictionary
+        object has the appropriate structure.
+        """
         if "persistent" not in metadata:
             raise ToolMetadataError("Missing persistent tools")
         if "transient" not in metadata:
@@ -49,21 +72,34 @@ class ToolMetadata:
 
     @classmethod
     def tool_md_from_dict(cls, metadata):
+        """tool_md_from_dict - returns a ToolMetadata object given a raw dictionary.
+        """
         ToolMetadata._validate_metadata(metadata)
         tmd = cls()
         tmd._data = metadata
         return tmd
 
     def getFullData(self):
+        """getFullData - return the entire dictionary of metadata for both persistent
+        and transient tools.
+        """
         return self._data
 
     def getPersistentTools(self):
+        """getPersistentTools - return a list of all the persistent tools
+        supported.
+        """
         return list(self._data["persistent"].keys())
 
     def getTransientTools(self):
+        """getTransientTools - return a list of all the transient tools
+        supported.
+        """
         return list(self._data["transient"].keys())
 
     def getProperties(self, tool):
+        """getProperties - return the recorded properties for the given tool.
+        """
         try:
             tool_prop = self._data["transient"][tool]
         except KeyError:
