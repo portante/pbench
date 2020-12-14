@@ -30,6 +30,11 @@ class RedisChannelSubscriber:
         """RedisChannelSubscriber constructor - responsible for setting up the
         subscription to the given channel name, and verifying the subscription
         worked properly.
+
+        :redis_server: - The Redis() server client object
+        :channel_name: - The name of the channel to subscribe to
+        :channel_type: - Can be either ONLYONE or ONEOFMANY, indicating how
+                         many subscribers to expect on the channel.
         """
         self.channel_name = channel_name
         assert (
@@ -143,7 +148,7 @@ class RedisChannelSubscriber:
         """fetch_json - a simple wrapper around fetch_message() to decode the
         string as a JSON document.
 
-        If the message is not valid JSON as warning is logged, and the message
+        If the message is not valid JSON a warning is logged, and the message
         is ignored.
 
         Yields a JSON document.

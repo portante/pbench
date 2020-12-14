@@ -42,11 +42,34 @@ class Client:
         to_client_chan=None,
         logger=None,
     ):
-        """Construct a Tool Meister "client" object, given the host and port of a
-        Redis server.  The caller can optionally provide a logger to be used.
+        """Construct a Tool Meister "client" object, given the host and port
+        of a Redis server.  The caller can optionally provide a logger to be
+        used.
 
         This constructor does not contact the Redis server, it just records
         the information for where that Redis server is.
+
+        :redis_server:   - (optional) a previously construct Redis server
+                           client object
+        :redis_host:     - (optional) the IP or host name of the Redis server
+                           to use
+        :redis_port:     - (optional) the port on which the Redis server on
+                           the given host name is listening
+        :channel_prefix: - (required) the prefix string to use for the channel
+                           name
+        :to_client_chan: - (optional) a previously constructed
+                           RedisChannelSubscriber object (the caller ensures
+                           it is for the same Redis server client object
+                           given)
+        :logger:         - (optional) a logger to use for reporting any errors
+                           encountered (one will be created if not provided)
+
+        Typically, if you already have a Redis server client object, you would
+        pass that in via "redis_server", otherwise you must pass a host name
+        and port number for the Redis server to use.
+
+        If you already have a RedisChannelSubscriber object, you must provide
+        the Redis server client object that was used to construct it.
         """
         assert (
             redis_server is None and (redis_host is not None and redis_port is not None)
@@ -62,6 +85,10 @@ class Client:
         self.to_client_channel = f"{channel_prefix}-{tm_channel_suffix_to_client}"
         self.from_client_channel = f"{channel_prefix}-{tm_channel_suffix_from_client}"
 
+        assert to_client_chan is None or redis_server is not None, (
+            "You must specify a Redis server client object with a"
+            " RedisChannelSubscriber object"
+        )
         self.to_client_chan = to_client_chan
 
         if logger is None:

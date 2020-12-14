@@ -625,6 +625,14 @@ class ToolDataSink(Bottle):
         # `root` user in a container, you can't copy all attributes, and a
         # "Permission denied" exception is raised.
         #
+        # Arguably this is a bug in shutil.copytree(); cp doesn't copy xattr
+        # unless --preserve and even so, --preserve --no-preserve=xattr would
+        # allow a workaround; but Python's package doesn't provide equivalents
+        # except to override the default use shutil.copy2 with shutil.copy and
+        # that doesn't affect how shutil.copyfile() updates directory
+        # attributes.
+        #
+        #
         # The original `pbench-metadata-log` code just used `cp -rL` and it
         # worked both in and out of a container.  So we just invoke that
         # command directly.
@@ -817,12 +825,8 @@ class ToolDataSink(Bottle):
         return
 
     def _change_tm_tracking(self, curr, new):
-        """_change_tm_tracking - if we have a tool meister tracking dictionary
-        update the posted action from the current expected value to the target
-        new value.
-
-        No changes take place if the tool meister tracking dictionary does not
-        exist yet.
+        """_change_tm_tracking - update the posted action from the current
+        expected value to the target new value in the tracking dictionary.
 
         Assumes self._lock is already acquired by our caller.
         """

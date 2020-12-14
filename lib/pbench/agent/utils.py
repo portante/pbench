@@ -137,6 +137,25 @@ def verify_sysinfo(sysinfo):
     return sorted(final_list), sorted(bad_list)
 
 
+def cli_verify_sysinfo(sysinfo):
+    """cli_verify_sysinfo - shared method of CLI interfaces to verify the
+    "sysinfo" parameter.
+
+    Returns a tuple of the final "sysinfo" parameter list, and a list of any
+    invalid sysinfo options.
+    """
+    if sysinfo is None:
+        bad_l = []
+        ret_sysinfo = ""
+    else:
+        sysinfo_l, bad_l = verify_sysinfo(sysinfo)
+        if sysinfo_l:
+            ret_sysinfo = ",".join(sysinfo_l)
+        else:
+            ret_sysinfo = ""
+    return ret_sysinfo, bad_l
+
+
 def collect_local_info(pbench_bin):
     """collect_local_info - helper method encapsulating the local information
     (metadata) about the environment where an entity is running.

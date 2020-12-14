@@ -95,7 +95,12 @@ from pbench.agent.tool_data_sink import main as tds_main
 from pbench.agent.tool_meister import main as tm_main
 from pbench.agent.tool_meister_client import Client
 from pbench.agent.toolmetadata import ToolMetadata
-from pbench.agent.utils import verify_sysinfo, info_log, verify_tool_group, BadToolGroup
+from pbench.agent.utils import (
+    cli_verify_sysinfo,
+    info_log,
+    verify_tool_group,
+    BadToolGroup,
+)
 from pbench.common.exceptions import BadConfig
 
 
@@ -254,7 +259,58 @@ def wait_for_tds(chan, logger):
     return 0 if status == "success" else 1
 
 
-def kill_redis_server(pid_file, ret_val_offset):
+class ReturnCode:
+    """ReturnCode - symbolic return codes for when the main program of
+    pbench-tool-meister-start.
+    """
+
+    SUCCESS = 0
+    BADTOOLGROUP = 1
+    BADAGENTCONFIG = 2
+    EXCAGENTCONFIG = 3
+    MISSINGINSTALLDIR = 4
+    EXCINSTALLDIR = 5
+    BADTOOLMETADATA = 6
+    MISSINGREQENVS = 7
+    EXCCREATETMDIR = 8
+    MISSINGHOSTNAMEENVS = 9
+    NOIP = 10
+    EXCREDISCONFIG = 11
+    EXCSPAWNREDIS = 12
+    REDISFAILED = 13
+    REDISCHANFAILED = 14
+    REDISTMKEYFAILED = 15
+    REDISTDSKEYFAILED = 16
+    TDSFORKFAILED = 17
+    TDSLOGPUBFAILED = 18
+    TMFAILURES = 19
+    TMNOSUCCESSES = 20
+    TDSWAITFAILURE = 21
+    EXCSYSINFODIR = 22
+    EXCTOOLGROUPDIR = 23
+    SYSINFOFAILED = 24
+    INITFAILED = 25
+
+    # Kill sub-codes
+    KILL_SUCCESS = 0
+    KILL_READEXC = 1
+    KILL_BADPID = 2
+    KILL_PIDNOTFOUND = 3
+    KILL_KILLERR = 4
+    KILL_KILLEXC = 5
+
+    @staticmethod
+    def kill_ret_code(kill_code, ret_val):
+        """kill_ret_code - return an integer return code made up of the given
+        kill code and a return value.
+
+        A kill code of 0 and return value of 42 is returned as 42.
+        A kill code of 5 and return value of 52 is returned as 542.
+        """
+        return (kill_code * 100) + ret_val
+
+
+def kill_redis_server(pid_file, ret_val):
     """kill_redis_server - given a redis server PID file, attempt to KILL the
     Redis server.
 
@@ -267,28 +323,28 @@ def kill_redis_server(pid_file, ret_val_offset):
         raw_pid = pid_file.read_text()
     except Exception:
         # No "pid" to kill
-        return ret_val_offset + 2
+        return ReturnCode.kill_ret_code(ReturnCode.KILL_READEXC, ret_val)
     else:
         try:
             pid = int(raw_pid)
         except Exception:
             # Bad pid value
-            return ret_val_offset + 3
+            return ReturnCode.kill_ret_code(ReturnCode.KILL_BADPID, ret_val)
         try:
             os.kill(pid, signal.SIGKILL)
         except OSError as exc:
             if exc.errno == errno.ESRCH:
                 # PID not found, ignore
-                return ret_val_offset + 4
+                return ReturnCode.kill_ret_code(ReturnCode.KILL_PIDNOTFOUND, ret_val)
             else:
                 # Some error encountered trying to KILL the process.
-                return ret_val_offset + 5
+                return ReturnCode.kill_ret_code(ReturnCode.KILL_KILLERR, ret_val)
         except Exception:
             # Some other error encountered trying to KILL the process.
-            return ret_val_offset + 6
+            return ReturnCode.kill_ret_code(ReturnCode.KILL_KILLEXC, ret_val)
         else:
             # "successfully" KILL'd the give process.
-            return ret_val_offset + 1
+            return ReturnCode.kill_ret_code(ReturnCode.KILL_SUCCESS, ret_val)
 
 
 def waitpid(pid):
@@ -305,8 +361,15 @@ def waitpid(pid):
     return exit_status
 
 
-def main(_prog, parsed):
+def main(_prog, cli_params):
     """Main program for the tool meister start.
+
+    :cli_params: expects a CLI parameters object which has two attributes:
+
+        * tool_group - The tool group from which to load the registered tools
+        * sysinfo    - The system information set to be collected at the start
+
+    Return 0 on success, non-zero ReturnCode class value on failure.
     """
     PROG = Path(_prog)
     logger = logging.getLogger(PROG.name)
@@ -326,7 +389,7 @@ def main(_prog, parsed):
     # -
 
     # Verify all the command line arguments
-    group = parsed.tool_group
+    group = cli_params.tool_group
     try:
         # Load the tool group data
         tool_group = ToolGroup(group)
@@ -335,26 +398,16 @@ def main(_prog, parsed):
         return 1
     except Exception:
         logger.exception("failed to load tool group data for '%s'", group)
-        return 1
-
-    sysinfo = parsed.sysinfo
-    if sysinfo is None:
-        sysinfo = ""
+        return ReturnCode.BADTOOLGROUP
     else:
-        sysinfo_l, bad_l = verify_sysinfo(sysinfo)
-        if bad_l:
-            logger.error('invalid sysinfo option(s), "{}"', ",".join(bad_l))
-            if not sysinfo_l:
-                return 2
-        if sysinfo_l:
-            sysinfo = ",".join(sysinfo_l)
-        else:
-            sysinfo = ""
+        if not tool_group.hostnames:
+            # If a tool group has no tools registered, then there will be no
+            # host names on which to start Tool Meisters.
+            return ReturnCode.SUCCESS
 
-    if not tool_group.hostnames:
-        # If a tool group has no tools registered, then there will be no host
-        # names on which to start Tool Meisters.
-        return 0
+    sysinfo, bad_l = cli_verify_sysinfo(cli_params.sysinfo)
+    if bad_l:
+        logger.error('invalid sysinfo option(s), "{}"', ",".join(bad_l))
 
     # Load the tool metadata
     try:
@@ -363,12 +416,12 @@ def main(_prog, parsed):
         ).pbench_install_dir
     except BadConfig as exc:
         logger.error("%s", exc)
-        return 3
+        return ReturnCode.BADAGENTCONFIG
     except Exception as exc:
         logger.error(
             "Unexpected error encountered loading pbench agent configuration: '%s'", exc
         )
-        return 4
+        return ReturnCode.EXCAGENTCONFIG
     else:
         try:
             tm_start_path = Path(inst_dir).resolve(strict=True)
@@ -377,28 +430,28 @@ def main(_prog, parsed):
                 "Unable to determine proper installation directory, '%s' not found",
                 inst_dir,
             )
-            return 5
+            return ReturnCode.MISSINGINSTALLDIR
         except Exception as exc:
             logger.exception(
                 "Unexpected error encountered resolving installation directory: '%s'",
                 exc,
             )
-            return 6
+            return ReturnCode.EXCINSTALLDIR
         else:
             try:
                 tool_metadata = ToolMetadata(tm_start_path)
             except Exception:
                 logger.exception("failed to load tool metadata")
-                return 7
+                return ReturnCode.BADTOOLMETADATA
 
-    # Load and verify required environment variables
+    # Load and verify required and optional environment variables.
     try:
         benchmark_run_dir = Path(os.environ["benchmark_run_dir"]).resolve(strict=True)
         hostname = os.environ["_pbench_hostname"]
         full_hostname = os.environ["_pbench_full_hostname"]
     except Exception:
         logger.exception("failed to fetch parameters from the environment")
-        return 8
+        return ReturnCode.MISSINGREQENVS
     else:
         tm_dir = benchmark_run_dir / "tm"
         try:
@@ -406,7 +459,7 @@ def main(_prog, parsed):
             os.chdir(tm_dir)
         except Exception:
             logger.exception("failed to create the local tool meister directory")
-            return 9
+            return ReturnCode.EXCCREATETMDIR
         if not full_hostname or not hostname:
             logger.error(
                 "ERROR - _pbench_hostname ('%s') and _pbench_full_hostname ('%s')"
@@ -414,7 +467,7 @@ def main(_prog, parsed):
                 hostname,
                 full_hostname,
             )
-            return 10
+            return ReturnCode.MISSINGHOSTNAMEENVS
 
     # See if anybody told us to use certain options with SSH commands.
     ssh_opts = os.environ.get("ssh_opts", "")
@@ -455,7 +508,7 @@ def main(_prog, parsed):
                 full_hostname,
                 tm_bind_hostname,
             )
-            return 11
+            return ReturnCode.NOIP
         assert (
             "localhost" in hostnames_l
         ), f"Logic Bomb! localhost does not map to an IP"
@@ -493,7 +546,7 @@ def main(_prog, parsed):
             fp.write(redis_conf_tmpl.format(**params))
     except Exception:
         logger.exception("failed to create redis server configuration")
-        return 12
+        return ReturnCode.EXCREDISCONFIG
 
     # Start the Redis Server itself
     redis_srvr = "redis-server"
@@ -504,13 +557,13 @@ def main(_prog, parsed):
         retcode = os.spawnl(os.P_WAIT, redis_srvr_path, redis_srvr, redis_conf)
     except Exception:
         logger.exception("failed to create redis server, daemonized")
-        return 13
+        return ReturnCode.EXCSPAWNREDIS
     else:
         if retcode != 0:
             logger.error(
                 "failed to create redis server, daemonized; return code: %d", retcode
             )
-            return 14
+            return ReturnCode.REDISFAILED
 
     # Connect to the Redis Server.
     #
@@ -527,7 +580,7 @@ def main(_prog, parsed):
         logger.error(
             "Unable to connect to redis server, %s:%d: %r", "localhost", redis_port, exc
         )
-        return kill_redis_server(redis_pid, 1000)
+        return kill_redis_server(redis_pid, ReturnCode.REDISCHANFAILED)
 
     # +
     # 3. Push the loaded tool group data and metadata into the Redis server
@@ -563,7 +616,7 @@ def main(_prog, parsed):
             logger.exception(
                 "failed to create tool meister parameter key in redis server"
             )
-            return kill_redis_server(redis_pid, 2000)
+            return kill_redis_server(redis_pid, ReturnCode.REDISTMKEYFAILED)
         tool_group_data[host] = tools
 
     # Create the key for the Tool Data Sink
@@ -587,7 +640,7 @@ def main(_prog, parsed):
         logger.exception(
             "failed to create tool data sink parameter key in redis server"
         )
-        return kill_redis_server(redis_pid, 3000)
+        return kill_redis_server(redis_pid, ReturnCode.REDISTDSKEYFAILED)
 
     # +
     # 4. Start the Tool Data Sink process
@@ -620,7 +673,7 @@ def main(_prog, parsed):
                 )
     except Exception:
         logger.exception("failed to create pbench data sink, daemonized")
-        return kill_redis_server(redis_pid, 4000)
+        return kill_redis_server(redis_pid, ReturnCode.TDSFORKFAILED)
     else:
         # Wait for logging channel to be up and ready before we start the
         # local and remote Tool Meisters.
@@ -633,7 +686,7 @@ def main(_prog, parsed):
                 )
             except Exception:
                 logger.exception("Failed to verify Tool Data Sink logging sink working")
-                return kill_redis_server(redis_pid, 4000)
+                return kill_redis_server(redis_pid, ReturnCode.TDSLOGPUBFAILED)
             else:
                 if num_present == 0:
                     time.sleep(0.1)
@@ -755,14 +808,14 @@ def main(_prog, parsed):
             logger.exception("Failed to publish terminate message")
         else:
             logger.debug("publish('terminate') = %r", ret)
-        return kill_redis_server(redis_pid, 5000)
+        return kill_redis_server(redis_pid, ReturnCode.TMFAILURES)
 
     if successes == 0:
         logger.warning(
             "unable to successfully start any tool meisters,"
             " but encountered no failures either: terminating"
         )
-        return kill_redis_server(redis_pid, 6000)
+        return kill_redis_server(redis_pid, ReturnCode.TMNOSUCCESSES)
 
     assert successes == tm_count, (
         f"Logic Bomb! Number of created Tool Meisters, {successes}, does not"
@@ -782,7 +835,7 @@ def main(_prog, parsed):
     )
     ret_val = wait_for_tds(to_client_chan, logger)
     if ret_val != 0:
-        return kill_redis_server(redis_pid, 7000)
+        return kill_redis_server(redis_pid, ReturnCode.TDSWAITFAILURE)
 
     # Setup a Client API object using our existing to_client_chan object to
     # drive the following client operations ("sysinfo" [optional] and "init"
@@ -802,14 +855,16 @@ def main(_prog, parsed):
                     "Unable to create sysinfo-dump directory base path: {}",
                     sysinfo_path,
                 )
-                ret_val = 7001
+                ret_val = ReturnCode.EXCSYSINFODIR
             else:
                 logger.debug("7. Collecting system information")
                 info_log("Collecting system information")
                 ret_val = client.publish(group, sysinfo_path, "sysinfo", sysinfo)
-                ret_val = 0 if ret_val == 0 else ret_val + 8000
+                ret_val = (
+                    ReturnCode.SUCCESS if ret_val == 0 else ReturnCode.SYSINFOFAILED
+                )
 
-        if ret_val == 0:
+        if ret_val == ReturnCode.SUCCESS:
             tool_dir = benchmark_run_dir / f"tools-{group}"
             try:
                 tool_dir.mkdir(exist_ok=True)
@@ -817,11 +872,12 @@ def main(_prog, parsed):
                 logger.error(
                     'failed to create tool output directory, "{}": {}', tool_dir, exc
                 )
-                ret_val = 7002
+                ret_val = ReturnCode.EXCTOOLGROUPDIR
             else:
                 logger.debug("8. Initialize persistent tools")
                 ret_val = client.publish(group, tool_dir, "init", None)
-                ret_val = 0 if ret_val == 0 else ret_val + 9000
+                if ret_val != ReturnCode.SUCCESS:
+                    ret_val = kill_redis_server(redis_pid, ReturnCode.INITFAILED)
 
     return ret_val
 
