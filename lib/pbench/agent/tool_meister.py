@@ -1396,14 +1396,13 @@ def main(argv):
     """
     _prog = Path(argv[0])
     PROG = _prog.name
-    pbench_bin = _prog.parent.parent.parent
 
     try:
         redis_host = argv[1]
         redis_port = argv[2]
         param_key = argv[3]
     except IndexError as e:
-        print(f"Invalid arguments: {e}", file=sys.stderr)
+        print(f"{PROG}: Invalid arguments: {e}", file=sys.stderr)
         return 1
     try:
         daemonize = argv[4]
@@ -1412,26 +1411,50 @@ def main(argv):
 
     tar_path = find_executable("tar")
     if tar_path is None:
-        print("External 'tar' executable not found.", file=sys.stderr)
+        print("{PROG}: External 'tar' executable not found.", file=sys.stderr)
         return 2
+
+    # The Tool Meister executable is in:
+    #   ${install_dir}/agent/util-scripts/tool-meister/pbench-tool-meister
+    # So .parent at each level is:
+    #   _prog       ${install_dir}/agent/util-scripts/tool-meister/pbench-tool-meister
+    #     .parent   ${install_dir}/agent/util-scripts/tool-meister
+    #     .parent   ${install_dir}/agent/util-scripts
+    #     .parent   ${install_dir}/agent
+    pbench_bin = _prog.parent.parent.parent
+
+    # The pbench-sysinfo-dump utility is no longer in the path where the CLI
+    # executables are found.  So we have to add to the default PATH to be sure
+    # it can be found, but only if it is not already present.
+    _path = os.environ.get("PATH", "")
+    _path_list = _path.split(":")
+    for _path_el in _path_list:
+        if _path_el.endswith("tool-meister"):
+            break
+    else:
+        _sep = "" if not _path else ":"
+        os.environ["PATH"] = f"{_path}{_sep}{_prog.parent}"
 
     sysinfo_dump = find_executable("pbench-sysinfo-dump")
     if sysinfo_dump is None:
-        print("External 'pbench-sysinfo-dump' executable not found.", file=sys.stderr)
+        print(
+            f"{PROG}: External 'pbench-sysinfo-dump' executable not found.",
+            file=sys.stderr,
+        )
         return 3
 
     try:
         # The temporary directory to use for capturing all tool data.
         tmp_dir = os.environ["pbench_tmp"]
     except Exception as e:
-        print(f"Missing pbench_tmp environment variable: {e}", file=sys.stderr)
+        print(f"{PROG}: Missing pbench_tmp environment variable: {e}", file=sys.stderr)
         return 4
 
     try:
         redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
     except Exception as exc:
         print(
-            f"Unable to construct Redis client, {redis_host}:{redis_port}: {exc}",
+            f"{PROG}: Unable to construct Redis client, {redis_host}:{redis_port}: {exc}",
             file=sys.stderr,
         )
         return 5
@@ -1439,7 +1462,9 @@ def main(argv):
     try:
         params_raw = redis_server.get(param_key)
         if params_raw is None:
-            print(f'Parameter key, "{param_key}" does not exist.', file=sys.stderr)
+            print(
+                f'{PROG}: Parameter key, "{param_key}" does not exist.', file=sys.stderr
+            )
             return 6
         params_str = params_raw.decode("utf-8")
         params = json.loads(params_str)
@@ -1449,7 +1474,7 @@ def main(argv):
         ToolMeister.fetch_params(params)
     except Exception as exc:
         print(
-            f"Unable to fetch and decode parameter key, '{param_key}': {exc}",
+            f"{PROG}: Unable to fetch and decode parameter key, '{param_key}': {exc}",
             file=sys.stderr,
         )
         return 7
