@@ -31,7 +31,7 @@ if [[ ${status} -ne 0 ]]; then
     exit 1
 fi
 
-pbench-register-tool --group "${group}" --name perf -- '--record-opts="record -a -freq=100 -g --event=branch-misses --event=cache-misses --event=instructions"' '--report-opts="-I -g"'
+pbench-register-tool --group "${group}" --name perf -- '--record-opts="-a -freq=100 -g --event=branch-misses --event=cache-misses --event=instructions"' '--report-opts="-I -g"'
 status=${?}
 if [[ ${status} -ne 0 ]]; then
     printf -- "\"pbench-register-tool --group ${group} --name perf -- ...\" failed to execute successfully (exit code: ${status})\n" >&2

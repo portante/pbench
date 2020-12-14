@@ -126,6 +126,8 @@ group = default
 trigger = None
 
 [tools/testhost.example.com]
+label = 
+tools = iostat,mpstat
 hostname-s = agent.example.com
 hostname-f = agent.example.com
 hostname-i = agent.example.com
@@ -133,6 +135,16 @@ hostname-a = agent.example.com
 rpm-version = v(unknown)-g(unknown)
 iostat = --interval=42 --options=forty-two
 mpstat = --interval=42 --options=forty-two
+
+[tools/testhost.example.com/iostat]
+options = --interval=42 --options=forty-two
+install_check_status_code = 0
+install_check_output = iostat: pbench-sysstat-12.0.3 is installed
+
+[tools/testhost.example.com/mpstat]
+options = --interval=42 --options=forty-two
+install_check_status_code = 0
+install_check_output = mpstat: pbench-sysstat-12.0.3 is installed
 
 --- mock-run/metadata.log file contents
 +++ mock-run/tm/pbench-tool-data-sink.err file contents

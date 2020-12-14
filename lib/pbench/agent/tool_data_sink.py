@@ -648,11 +648,15 @@ class ToolDataSink(Bottle):
 
         section = "pbench"
         mdlog.add_section(section)
-        # FIXME - handle "%" characters in config and name values
-        mdlog.set(section, "config", self.optional_md["config"])
+        # Users have a funny way of adding '%' characters to the config
+        # variable, so we have to be sure we handle "%" characters in the
+        # config metadata properly.
+        mdlog.set(section, "config", self.optional_md["config"].replace("%", "%%"))
         mdlog.set(section, "date", self.optional_md["date"])
-        # FIXME - handle "%" characters in config and name values
-        mdlog.set(section, "name", self.benchmark_run_dir.name)
+        # Users have a funny way of adding '%' characters to the run
+        # directory, so we have to be sure we handle "%" characters in the
+        # directory name metadata properly.
+        mdlog.set(section, "name", self.benchmark_run_dir.name.replace("%", "%%"))
         version, seqno, sha1, hostdata = collect_local_info(self.pbench_bin)
         rpm_version = f"v{version}-{seqno}g{sha1}"
         mdlog.set(section, "rpm-version", rpm_version)
@@ -682,7 +686,10 @@ class ToolDataSink(Bottle):
         for host, tm in sorted(tms.items()):
             section = f"tools/{host}"
             mdlog.add_section(section)
-            # FIXME - add label
+            mdlog.set(section, "label", tm["label"])
+            tools_string = ",".join(sorted(list(tm["tools"].keys())))
+            mdlog.set(section, "tools", tools_string)
+
             # add host data
             mdlog.set(section, "hostname-s", tm["hostname_s"])
             mdlog.set(section, "hostname-f", tm["hostname_f"])
@@ -691,9 +698,23 @@ class ToolDataSink(Bottle):
             mdlog.set(section, "hostname-I", tm["hostname_I"])
             ver, seq, sha = tm["version"], tm["seqno"], tm["sha1"]
             mdlog.set(section, "rpm-version", f"v{ver}-{seq}g{sha}")
+
+            # Compatibility - keep each tool with options listed
             for tool, opts in tm["tools"].items():
                 mdlog.set(section, tool, opts)
-            # FIXME - add tool install results
+
+        for host, tm in sorted(tms.items()):
+            for tool, opts in tm["tools"].items():
+                section = f"tools/{host}/{tool}"
+                mdlog.add_section(section)
+                mdlog.set(section, "options", opts)
+                try:
+                    code, msg = tm["installs"][tool]
+                except KeyError:
+                    pass
+                else:
+                    mdlog.set(section, "install_check_status_code", str(code))
+                    mdlog.set(section, "install_check_output", msg)
 
         with (mdlog_name).open("w") as fp:
             mdlog.write(fp)

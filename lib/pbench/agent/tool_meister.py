@@ -386,6 +386,7 @@ class ToolMeister:
             hostname = params["hostname"]
             tool_metadata = ToolMetadata.tool_md_from_dict(params["tool_metadata"])
             tools = params["tools"]
+            label = params["label"]
         except KeyError as exc:
             raise ToolMeisterError(f"Invalid parameter block, missing key {exc}")
         else:
@@ -397,6 +398,7 @@ class ToolMeister:
                 hostname,
                 tool_metadata,
                 tools,
+                label,
             )
 
     _valid_states = frozenset(["startup", "idle", "running", "shutdown"])
@@ -423,6 +425,7 @@ class ToolMeister:
             self._hostname,
             self._tool_metadata,
             self._tools,
+            self._label,
         ) = ret_val
         self._rs = redis_server
         self.logger = logger
@@ -504,6 +507,7 @@ class ToolMeister:
         started_msg = dict(
             hostname=self._hostname,
             kind="tm",
+            label=self._label,
             pid=os.getpid(),
             version=version,
             seqno=seqno,

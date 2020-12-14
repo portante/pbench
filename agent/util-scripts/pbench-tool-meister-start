@@ -199,8 +199,9 @@ class ToolGroup:
                 self.toolnames[tool][host] = tool_opts
 
     def get_tools(self, host):
-        """Given a target host, return a dictionary with the list of tool names
-        as keys, and the values being their options for that host.
+        """get_tools - given a target host, return a dictionary with the list
+        of tool names as keys, and the values being their options for that
+        host.
         """
         tools = dict()
         for tool, opts in self.toolnames.items():
@@ -212,6 +213,16 @@ class ToolGroup:
             else:
                 tools[tool] = host_opts
         return tools
+
+    def get_label(self, host):
+        """get_label - given a target host, return the label associated with
+        that host.
+        """
+        try:
+            label = self.labels[host]
+        except KeyError:
+            label = ""
+        return label
 
 
 def wait_for_tds(chan, logger):
@@ -539,6 +550,7 @@ def main(_prog, parsed):
             hostname=host,
             tool_metadata=tool_metadata.getFullData(),
             tools=tools,
+            label=tool_group.get_label(host),
         )
         # Create a separate key for the Tool Meister that will be on that host
         #
