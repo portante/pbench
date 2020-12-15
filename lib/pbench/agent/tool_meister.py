@@ -173,12 +173,12 @@ class Tool:
     "tool-scripts/base-tool" bash script.
     """
 
-    def __init__(self, name, group, tool_opts, pbench_bin, tool_dir, logger):
+    def __init__(self, name, group, tool_opts, pbench_install_dir, tool_dir, logger):
         self.logger = logger
         self.name = name
         self.group = group
         self.tool_opts = tool_opts
-        self.pbench_bin = pbench_bin
+        self.pbench_install_dir = pbench_install_dir
         self.tool_dir = tool_dir
         self.start_process = None
         self.stop_process = None
@@ -198,7 +198,7 @@ class Tool:
         output, returning them as a tuple to the caller.
         """
         args = [
-            f"{self.pbench_bin}/tool-scripts/{self.name}",
+            f"{self.pbench_install_dir}/tool-scripts/{self.name}",
             "--install",
             f"--dir={self.tool_dir}",
             self.tool_opts,
@@ -217,7 +217,7 @@ class Tool:
         """
         self._check_no_processes()
         args = [
-            f"{self.pbench_bin}/tool-scripts/{self.name}",
+            f"{self.pbench_install_dir}/tool-scripts/{self.name}",
             "--start",
             f"--dir={self.tool_dir}",
             self.tool_opts,
@@ -257,7 +257,7 @@ class Tool:
             )
 
         args = [
-            f"{self.pbench_bin}/tool-scripts/{self.name}",
+            f"{self.pbench_install_dir}/tool-scripts/{self.name}",
             "--stop",
             f"--dir={self.tool_dir}",
             self.tool_opts,
@@ -405,14 +405,21 @@ class ToolMeister:
     _message_keys = frozenset(["action", "args", "directory", "group"])
 
     def __init__(
-        self, pbench_bin, tmp_dir, tar_path, sysinfo_dump, params, redis_server, logger
+        self,
+        pbench_install_dir,
+        tmp_dir,
+        tar_path,
+        sysinfo_dump,
+        params,
+        redis_server,
+        logger,
     ):
         """Constructor for the ToolMeister object - sets up the internal state
         given the constructor parameters, setting up the state transition
         table, and forming the various channel names from the channel prefix
         in the params object.
         """
-        self.pbench_bin = pbench_bin
+        self.pbench_install_dir = pbench_install_dir
         self._tmp_dir = tmp_dir
         self.tar_path = tar_path
         self.sysinfo_dump = sysinfo_dump
@@ -482,7 +489,7 @@ class ToolMeister:
             self._rs, self._to_tms_channel, RedisChannelSubscriber.ONEOFMANY
         )
 
-        version, seqno, sha1, hostdata = collect_local_info(self.pbench_bin)
+        version, seqno, sha1, hostdata = collect_local_info(self.pbench_install_dir)
 
         tool_installs = {}
         for name, tool_opts in sorted(self._tools.items()):
@@ -494,7 +501,7 @@ class ToolMeister:
                     name,
                     self._group,
                     tool_opts,
-                    self.pbench_bin,
+                    self.pbench_install_dir,
                     self._tool_dir,
                     self.logger,
                 )
@@ -723,7 +730,11 @@ class ToolMeister:
                 )
                 self._send_client_status("internal-error")
                 return False
-        self._tool_dir = _dir / self._hostname
+        if self._label:
+            sub_dir = f"{self._label}:{self._hostname}"
+        else:
+            sub_dir = self._hostname
+        self._tool_dir = _dir / sub_dir
         try:
             self._tool_dir.mkdir()
         except Exception:
@@ -753,7 +764,7 @@ class ToolMeister:
                     name,
                     self._group,
                     tool_opts,
-                    self.pbench_bin,
+                    self.pbench_install_dir,
                     self._tool_dir,
                     self.logger,
                 )
@@ -876,23 +887,41 @@ class ToolMeister:
         URL constructed from the "uri" fragment, using the provided context.
 
         The directory argument is a Path object who last element is a
-        directory with a name that is the same as the self.hostname.
+        directory with a name that is the same as the self._hostname or
+        {self._label}:{self._hostname}, referred to as the target_dir.
 
         The uri and ctx arguments are used to form the final URL as defined by:
 
-           f"http://{self._controller}:8080/{uri}/{ctx}/{self._hostname}"
+           f"http://{self._controller}:8080/{uri}/{ctx}/{target_dir}"
 
         """
+        if self._label:
+            assert (
+                directory.name == f"{self._label}:{self._hostname}"
+            ), f"Expected directory target with <label>:<hostname>, '{directory}'"
+        else:
+            assert (
+                directory.name == self._hostname
+            ), f"Expected directory target with <hostname>, '{directory}'"
+
         failures = 0
+        target_dir = directory.name
         parent_dir = directory.parent
-        tar_file = parent_dir / f"{self._hostname}.tar.xz"
-        o_file = parent_dir / f"{self._hostname}.tar.out"
-        e_file = parent_dir / f"{self._hostname}.tar.err"
+        tar_file = parent_dir / f"{target_dir}.tar.xz"
+        o_file = parent_dir / f"{target_dir}.tar.out"
+        e_file = parent_dir / f"{target_dir}.tar.err"
         try:
             # Invoke tar directly for efficiency.
             with o_file.open("w") as ofp, e_file.open("w") as efp:
                 cp = subprocess.run(
-                    [self.tar_path, "-Jcf", tar_file, self._hostname],
+                    [
+                        self.tar_path,
+                        "--create",
+                        "--xz",
+                        "--force-local",
+                        f"--file={tar_file}",
+                        target_dir,
+                    ],
                     cwd=parent_dir,
                     stdin=None,
                     stdout=ofp,
@@ -1065,10 +1094,17 @@ class ToolMeister:
             self._send_client_status("success")
             return 0
 
-        assert tool_dir.name == self._hostname, (
-            f"Logic Bomb! Final path component of the tool directory is"
-            f" '{tool_dir.name}', not our host name '{self._hostname}'"
-        )
+        if self._label:
+            assert tool_dir.name == f"{self._label}:{self._hostname}", (
+                f"Logic Bomb! Final path component of the tool directory is"
+                f" '{tool_dir.name}', not our label and host name"
+                f" '{self._label}:{self._hostname}'"
+            )
+        else:
+            assert tool_dir.name == self._hostname, (
+                f"Logic Bomb! Final path component of the tool directory is"
+                f" '{tool_dir.name}', not our host name '{self._hostname}'"
+            )
 
         directory_bytes = data["directory"].encode("utf-8")
         tool_data_ctx = hashlib.md5(directory_bytes).hexdigest()
@@ -1128,8 +1164,10 @@ class ToolMeister:
         if not sysinfo_args:
             sysinfo_args = "none"
 
-        # FIXME - We need the label for this registered host
-        label = ""
+        if self._label:
+            sub_dir = f"{self._label}:{self._hostname}"
+        else:
+            sub_dir = self._hostname
 
         if self._hostname == self._controller:
             try:
@@ -1154,23 +1192,35 @@ class ToolMeister:
                 self._send_client_status("internal-error")
                 return 1
 
-        command = [
-            self.sysinfo_dump,
-            str(sysinfo_dir),
-            sysinfo_args,
-            label,
-        ]
+        instance_dir = sysinfo_dir / sub_dir
+        try:
+            instance_dir.mkdir()
+        except Exception:
+            self.logger.exception(
+                "Failed to create instance directory for sysinfo operation"
+            )
+            self._send_client_status("internal-error")
+            return 1
+
+        command = [self.sysinfo_dump, str(instance_dir), sysinfo_args, "parallel"]
 
         self.logger.info("pbench-sysinfo-dump -- %s", " ".join(command))
 
         failures = 0
         msg = ""
-        o_file = sysinfo_dir / "tm-sysinfo.out"
-        e_file = sysinfo_dir / "tm-sysinfo.err"
+        o_file = instance_dir / "tm-sysinfo.out"
+        e_file = instance_dir / "tm-sysinfo.err"
         try:
             with o_file.open("w") as ofp, e_file.open("w") as efp:
+                my_env = os.environ.copy()
+                my_env["pbench_install_dir"] = self.pbench_install_dir
                 cp = subprocess.run(
-                    command, cwd=sysinfo_dir, stdin=None, stdout=ofp, stderr=efp,
+                    command,
+                    cwd=instance_dir,
+                    stdin=None,
+                    stdout=ofp,
+                    stderr=efp,
+                    env=my_env,
                 )
         except Exception as exc:
             msg = f"Failed to collect system information: {exc}"
@@ -1187,13 +1237,13 @@ class ToolMeister:
                 "%s: sysinfo send (no-op) %s %s",
                 self._hostname,
                 self._group,
-                sysinfo_dir,
+                instance_dir,
             )
         else:
             directory_bytes = data["directory"].encode("utf-8")
             sysinfo_data_ctx = hashlib.md5(directory_bytes).hexdigest()
             failures = self._send_directory(
-                sysinfo_dir / self._hostname, "sysinfo-data", sysinfo_data_ctx
+                instance_dir, "sysinfo-data", sysinfo_data_ctx
             )
 
         self._send_client_status(
@@ -1239,7 +1289,7 @@ def driver(
     PROG,
     tar_path,
     sysinfo_dump,
-    pbench_bin,
+    pbench_install_dir,
     tmp_dir,
     param_key,
     params,
@@ -1279,7 +1329,13 @@ def driver(
     ret_val = 0
     try:
         with ToolMeister(
-            pbench_bin, tmp_dir, tar_path, sysinfo_dump, params, redis_server, logger
+            pbench_install_dir,
+            tmp_dir,
+            tar_path,
+            sysinfo_dump,
+            params,
+            redis_server,
+            logger,
         ) as tm:
             logger.debug("waiting ...")
             for action, data in tm.wait_for_command():
@@ -1311,7 +1367,7 @@ def daemon(
     PROG,
     tar_path,
     sysinfo_dump,
-    pbench_bin,
+    pbench_install_dir,
     tmp_dir,
     param_key,
     params,
@@ -1370,7 +1426,7 @@ def daemon(
             PROG,
             tar_path,
             sysinfo_dump,
-            pbench_bin,
+            pbench_install_dir,
             tmp_dir,
             param_key,
             params,
@@ -1419,13 +1475,13 @@ def main(argv):
         return 2
 
     # The Tool Meister executable is in:
-    #   ${install_dir}/agent/util-scripts/tool-meister/pbench-tool-meister
+    #   ${pbench_install_dir}/util-scripts/tool-meister/pbench-tool-meister
     # So .parent at each level is:
-    #   _prog       ${install_dir}/agent/util-scripts/tool-meister/pbench-tool-meister
-    #     .parent   ${install_dir}/agent/util-scripts/tool-meister
-    #     .parent   ${install_dir}/agent/util-scripts
-    #     .parent   ${install_dir}/agent
-    pbench_bin = _prog.parent.parent.parent
+    #   _prog       ${pbench_install_dir}/util-scripts/tool-meister/pbench-tool-meister
+    #     .parent   ${pbench_install_dir}/util-scripts/tool-meister
+    #     .parent   ${pbench_install_dir}/util-scripts
+    #     .parent   ${pbench_install_dir}
+    pbench_install_dir = _prog.parent.parent.parent
 
     # The pbench-sysinfo-dump utility is no longer in the path where the CLI
     # executables are found.  So we have to add to the default PATH to be sure
@@ -1488,7 +1544,7 @@ def main(argv):
             PROG,
             tar_path,
             sysinfo_dump,
-            pbench_bin,
+            pbench_install_dir,
             tmp_dir,
             param_key,
             params,
@@ -1501,7 +1557,7 @@ def main(argv):
             PROG,
             tar_path,
             sysinfo_dump,
-            pbench_bin,
+            pbench_install_dir,
             tmp_dir,
             param_key,
             params,

@@ -1126,15 +1126,19 @@ class ToolDataSink(Bottle):
                     abort(500, "INTERNAL ERROR")
                 # Fetch the Tool Meister tracking record for this host and verify
                 # it is in the expected waiting state.
-                tm_tracker = self._tm_tracking[hostname]
-                if tm_tracker["posted"] != "waiting":
-                    self.logger.error(
-                        "INTERNAL ERROR: expected Tool Meister for host, %s, in"
-                        " `waiting` state, found in `%s` state",
-                        hostname,
-                        tm_tracker["posted"],
-                    )
-                    abort(400, "No data expected from a Tool Meister")
+                try:
+                    tm_tracker = self._tm_tracking[hostname]
+                except KeyError:
+                    abort(400, f"Unknown Tool Meister '{hostname}'")
+                else:
+                    if tm_tracker["posted"] != "waiting":
+                        self.logger.error(
+                            "INTERNAL ERROR: expected Tool Meister for host, '%s', in"
+                            " `waiting` state, found in `%s` state",
+                            hostname,
+                            tm_tracker["posted"],
+                        )
+                        abort(400, "No data expected from a Tool Meister")
 
             try:
                 content_length = int(request["CONTENT_LENGTH"])

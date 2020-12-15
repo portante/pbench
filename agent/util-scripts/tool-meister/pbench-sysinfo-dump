@@ -1,88 +1,71 @@
 #!/bin/bash
-# -*- mode: shell-script; indent-tabs-mode: t; sh-basic-offset: 8; sh-indentation: 8; sh-indent-for-case-alt: + -*-
+# -*- mode: shell-script; indent-tabs-mode: t; sh-basic-offset: 8; sh-indentation: 8; tab-width: 8 -*-
 
-script_path="$(dirname ${0})"
-script_name="$(basename ${0})"
-pbench_bin="$(realpath -e ${script_path}/../..)"
-
-# source the base script
-. "${pbench_bin}"/base
-
-dir="$(readlink -f ${1} 2>/dev/null)"
+dir="$(realpath -e ${1} 2> /dev/null)"
 if [[ ${?} -ne 0 ]]; then
-	error_log "You must provide a directory that exists, \"${1}\" is not a real path"
+	printf -- "You must provide a directory that exists, \"%s\" is not a real path\n" "${1}" >&2
 	exit 1
 fi
 if [[ ! -d "${dir}" ]]; then
-	error_log "You must provide a directory that exists, \"${dir}\" does not"
+	printf -- "You must provide a directory that exists, \"%s\" does not\n" "${dir}" >&2
 	exit 1
 fi
 
 sysinfo="${2}"
 
-label="${3}"
-if [[ -z "${label}" ]]; then
-	dir="${dir}/${_pbench_full_hostname}"
+if [[ -z "${_PBENCH_UNIT_TESTS}" ]]; then
+	mode="${3}"
 else
-	dir="${dir}/${label}:${_pbench_full_hostname}"
+	# Force sequential mode for unit tests.
+	mode=""
 fi
-mkdir -p ${dir}
-if [[ ! -d "${dir}" ]]; then
-	error_log "Failed to create the sysinfo directory, \"${dir}\""
-	exit 1
-fi
-
-# generate inventory file with controller and remotes
-export INVENTORY=/tmp/inventory.${$}
-trap "rm -f ${INVENTORY}" QUIT INT EXIT
 
 function collect_kernel_config {
-	if [[ -e /boot/config-$(uname -r) ]] ;then
-		cp /boot/config-$(uname -r) $dir
+	if [[ -e /boot/config-$(uname -r) ]]; then
+		cp /boot/config-$(uname -r) ${dir}/
 	fi
+	printf -- "done collecting kernel configuration\n"
 }
 
-function collect_mitigation_data {
+function collect_security_mitigations {
 	# spectre and meltdown
 
-	> $dir/security-mitigation-data.txt
+	> ${dir}/security-mitigation-data.txt
 	# check the generic vulnerabilities files first
-	if [ -d  /sys/devices/system/cpu/vulnerabilities ] ;then
-		grep -Hs . /sys/devices/system/cpu/vulnerabilities/* >> $dir/security-mitigation-data.txt
+	if [[ -d /sys/devices/system/cpu/vulnerabilities ]]; then
+		grep -Hs . /sys/devices/system/cpu/vulnerabilities/* >> ${dir}/security-mitigation-data.txt
 	fi
 	# then check the RHEL-specific flag settings files - only
 	# applicable on x86_64
-	if [ -d /sys/kernel/debug/x86 ] ;then
-		echo >> $dir/security-mitigation-data.txt
-		grep -Hs . /sys/kernel/debug/x86/*enabled >> $dir/security-mitigation-data.txt
+	if [[ -d /sys/kernel/debug/x86 ]]; then
+		echo >> ${dir}/security-mitigation-data.txt
+		grep -Hs . /sys/kernel/debug/x86/*enabled >> ${dir}/security-mitigation-data.txt
 	fi
+	printf -- "done collecting mitigation data\n"
 }
 
 function collect_libvirt {
 	if [[ -e /var/log/libvirt && -e /etc/libvirt ]]; then
-		debug_log "[$script_name]collecting libvirt data"
-		mkdir -p $dir/libvirt/log
-		pushd /var/log/libvirt >/dev/null && find . -name "*.log" | cpio -pdum $dir/libvirt/log/ 2>/dev/null
-		mkdir -p $dir/libvirt/etc
-		pushd /etc/libvirt >/dev/null && find | cpio -pdum $dir/libvirt/etc/ 2>/dev/null
-		debug_log "[$script_name]done collecting libvirt data"
+		mkdir -p ${dir}/libvirt/log
+		pushd /var/log/libvirt >/dev/null && find . -name "*.log" | cpio -pdum ${dir}/libvirt/log/ 2>/dev/null
+		mkdir -p ${dir}/libvirt/etc
+		pushd /etc/libvirt >/dev/null && find | cpio -pdum ${dir}/libvirt/etc/ 2>/dev/null
 	fi
+	printf -- "done collecting libvirt data\n"
 }
 
 function collect_topology {
-	debug_log "[$script_name]collecting system topology"
 	if [[ -f /usr/bin/lstopo ]]; then
-		lstopo --of txt >$dir/lstopo.txt
+		lstopo --of txt > ${dir}/lstopo.txt
 	fi
-	debug_log "[$script_name]done collecting system topology"
+	printf -- "done collecting system topology\n"
 }
 
 function collect_block {
-	debug_log "[$script_name]collecting block data"
-	for n in  /sys/block/[s,h,v]d\*[a-z]/; do
-		find $n  -type f -printf "%p " -exec cat '{}' \;  2>/dev/null
-	done >$dir/block-params.log
-	debug_log "[$script_name]done collecting block data"
+	for n in /sys/block/[s,h,v]d\*[a-z]/; do
+		find ${n} -type f -printf "%p " -exec cat '{}' \; 2> /dev/null
+	done > ${dir}/block-params.log
+	printf -- "done collecting block data\n"
 }
 
 function collect_sos {
@@ -127,7 +110,7 @@ function collect_sos {
 	printf -- " --batch%s --tmp-dir=\"%s\" --name \"%s\"\n" "${_quiet}" "${dir}" "${_name}" >> ${_cmd}
 	chmod +x ${_cmd}
 
-	debug_log "[${script_name}]collecting sosreport"
+	printf -- "collecting sosreport\n"
 	${_cmd} > ${dir}/sosreport-${_name}.log 2>&1
 
 	# The latest version of sosreport (3.6 right now) generates different names
@@ -138,95 +121,105 @@ function collect_sos {
 	_sosreport_md5="${_sosreport_tb}.md5"
 	ls -1 ${_sosreport_tb} ${_sosreport_md5} > ${dir}/sosreport-names.lis 2> /dev/null
 	if [[ $? -ne 0 ]]; then
-		error_log "[$script_name]sosreport collection failed!"
+		printf -- "ERROR: sosreport collection failed!\n" >&2
 	else
 		rm -f ${dir}/sosreport-names.lis
-		debug_log "[$script_name]done collecting sosreport"
+		printf -- "done collecting sosreport\n"
 	fi
 }
 
-function collect_ara_data {
+function collect_ara {
 	# collect data only when ara is installed
-	if python -c "import ara" &>/dev/null; then
-		mkdir $dir/ara
-		generate_inventory > $INVENTORY
-		ansible-playbook -i ${INVENTORY} --extra-vars '{"SYSINFO_DIR":"'$dir'"}' "$pbench_install_dir/ansible/ara/ara.yml"
+	if python -c "import ara" &> /dev/null; then
+		ara_pb="${pbench_install_dir}/ansible/ara/ara.yml"
+		if [[ ! -d "${pbench_install_dir}" || ! -f ${ara_pb} ]]; then
+			printf -- "ERROR: ara playbook not found, '%s'\n" "${ara_pb}" >&2
+			return 1
+		fi
+
+		mkdir ${dir}/ara
+
+		# generate inventory file with controller and remotes
+		INVENTORY=${dir}/ara/inventory
+		generate_inventory > ${INVENTORY}
+
+		ansible-playbook -i ${INVENTORY} --extra-vars '{"SYSINFO_DIR":"'${dir}'"}' "${ara_pb}"
+		printf -- "done collection ara data\n"
 	else
-		debug_log "[$script_name]skipping, $item not installed"
+		printf -- "skipping, ara python module not installed\n"
 	fi
 }
 
-function collect_stockpile_data {
-	# parse config
-	stockpile_path=$(pbench-config stockpile_path stockpile)
-	stockpile_user=$(pbench-config stockpile_user stockpile)
-	stockpile_local_remote_user=$(pbench-config local_remote_user stockpile)
-	stockpile_host_remote_user=$(pbench-config host_remote_user stockpile)
-	stockpile_output_path=$(pbench-config stockpile_output_path stockpile)
-	stockpile_log=$(pbench-config stockpile_log stockpile)
-
-	if [[ -z "$stockpile_path" ]]; then
-		stockpile_path=$pbench_install_dir
+function collect_stockpile {
+	stockpile_playbook="${pbench_install_dir}/stockpile/stockpile.yml"
+	if [[ ! -d "${pbench_install_dir}" || ! -f ${stockpile_playbook} ]]; then
+		printf -- "ERROR: stockpile playbook not found, '%s'\n" "${stockpile_playbook}" >&2
+		return 1
 	fi
 
-	# set stockpile log file and output paths
-	if [[ -z "$stockpile_log" ]]; then
-		stockpile_log=$dir/stockpile.log
-	fi
-	if [[ -z "$stockpile_output_path" ]]; then
-		stockpile_output_path=$dir/stockpile.json
-	fi
+	mkdir ${dir}/stockpile
+
+	stockpile_log=${dir}/stockpile/output.log
+	stockpile_output_path=${dir}/stockpile/output.json
 
 	# generate inventory and run stockpile
-	generate_inventory stockpile > $INVENTORY
-	debug_log "[$script_name]Collecting stockpile data"
-	stockpile_opts="stockpile_user=$stockpile_user local_remote_user=$stockpile_local_remote_user host_remote_user=$stockpile_host_remote_user stockpile_output_path=$stockpile_output_path"
-	stockpile_playbook="$stockpile_path/stockpile/stockpile.yml"
-	echo "ansible-playbook -vv --extra-vars '"$stockpile_opts"' -i $INVENTORY $stockpile_playbook" > ${benchmark_run_dir}/stockpile.cmd
-	chmod +x ${benchmark_run_dir}/stockpile.cmd
-	debug_log "Running stockpile with options: $stockpile_opts"
-	${benchmark_run_dir}/stockpile.cmd 2>&1 >$stockpile_log
-	if [[ $? != 0 ]]; then
-		error_log "[$script_name] Stockpile run failed"
-		exit 1
+	INVENTORY=${dir}/stockpile/inventory
+	generate_inventory stockpile > ${INVENTORY}
+
+	stockpile_opts="stockpile_user=${USER} local_remote_user=${USER} host_remote_user=${USER} stockpile_output_path=${stockpile_output_path}"
+	stockpile_playbook="${pbench_install_dir}/stockpile/stockpile.yml"
+	echo "ansible-playbook -vv --extra-vars '"${stockpile_opts}"' -i ${INVENTORY} ${stockpile_playbook}" > ${dir}/stockpile/command
+	chmod +x ${dir}/stockpile/command
+
+	${dir}/stockpile/command &> ${stockpile_log}
+	if [[ ${?} != 0 ]]; then
+		printf -- "ERROR: stockpile run failed\n" >&2
+	else
+		printf -- "done collecting stockpile data\n"
 	fi
 }
 
-function collect_insights_data {
-	debug_log "[$script_name]collecting insights data"
-	script -c 'insights-client --offline --logging-file $dir/insights-client.log' /dev/null | sed -n 's/.*\sat\s//p' | tr -d "$'\r" | xargs -I '{}' mv {} $dir
-	if [[ $? != 0 ]]; then
-		error_log "[$script_name] insights-client run failed"
-		exit 1
+function collect_insights {
+	mkdir ${dir}/insights-client
+	script -c 'insights-client --offline --logging-file ${dir}/insights-client/output.log' /dev/null | sed -n 's/.*\sat\s//p' | tr -d "$'\r" | xargs -I '{}' mv {} ${dir}/insights-client
+	if [[ ${?} != 0 ]]; then
+		printf -- "ERROR: insights-client run failed\n" >&2
 	else
-		debug_log "[$script_name]done collecting insights data"
+		printf -- "done collecting insights data\n"
 	fi
 }
 
-
-for item in ${sysinfo//,/ };do
-	debug_log "[$script_name]: collecting $item"
-	if [[ "$item" == "kernel_config" ]]; then
-		collect_kernel_config &
-	elif [[ "$item" == "security_mitigations" ]]; then
-		collect_mitigation_data &
-	elif [[ "$item" == "libvirt" ]]; then
-		collect_libvirt &
-	elif [[ "$item" == "topology" ]]; then
-		collect_topology &
-	elif [[ "$item" == "sos" ]]; then
-		collect_sos &
-	elif [[ "$item" == "block" ]]; then
-		collect_block &
-	elif [[ "$item" == "ara" ]]; then
-		collect_ara_data &> $pbench_log
-	elif [[ "$item" == "stockpile" ]]; then
-		collect_stockpile_data &
-	elif [[ "$item" == "insights" ]]; then
-                collect_insights_data &
+for item in ${sysinfo//,/ }; do
+	if [[ "${item}" == "kernel_config" ]]; then
+		:
+	elif [[ "${item}" == "security_mitigations" ]]; then
+		:
+	elif [[ "${item}" == "libvirt" ]]; then
+		:
+	elif [[ "${item}" == "topology" ]]; then
+		:
+	elif [[ "${item}" == "sos" ]]; then
+		:
+	elif [[ "${item}" == "block" ]]; then
+		:
+	elif [[ "${item}" == "ara" ]]; then
+		:
+	elif [[ "${item}" == "stockpile" ]]; then
+		:
+	elif [[ "${item}" == "insights" ]]; then
+                :
 	else
-		error_log "[$script_name]bad sysinfo value, \"${item}\""
+		printf -- "bad sysinfo value, \"%s\"\n" "${item}" >&2
+		continue
+	fi
+	printf -- "collecting %s\n" "${item}"
+	if [[ "${mode}" == "parallel" ]]; then
+		collect_${item} &
+	else
+		collect_${item}
 	fi
 done
 wait
-chmod -R 775 $dir
+
+# FIXME - what?
+chmod -R 775 ${dir}

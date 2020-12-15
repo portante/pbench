@@ -47,17 +47,12 @@ if [[ ${status} -ne 0 ]]; then
     exit 1
 fi
 
-redis_pid_file="${benchmark_run_dir}/tm/redis_17001.pid"
+source ${_script_path}/common-tm-cleanup
 
 _PBENCH_TOOL_MEISTER_LOG_LEVEL="debug" _PBENCH_TOOL_DATA_SINK_LOG_LEVEL="debug" _PBENCH_TOOL_MEISTER_START_LOG_LEVEL="debug" PBENCH_TM_BIND_HOSTNAME="localhost" pbench-tool-meister-start --sysinfo="none" ${group}
 status=${?}
 if [[ ${status} -ne 0 ]]; then
     printf -- "\"pbench-tool-meister-start ${group}\" failed to execute successfully (exit code: ${status})\n" >&2
-    redis_pid="$(cat ${redis_pid_file} 2> /dev/null)"
-    if [[ ! -z "${redis_pid}" ]]; then
-        kill -TERM ${redis_pid}
-        tail --pid=${redis_pid} -f /dev/null > /dev/null 2>&1
-    fi
     exit 1
 fi
 
@@ -65,10 +60,5 @@ _PBENCH_TOOL_MEISTER_STOP_LOG_LEVEL="debug" pbench-tool-meister-stop --sysinfo="
 status=${?}
 if [[ ${status} -ne 0 ]]; then
     printf -- "\"pbench-tool-meister-stop\" failed to execute successfully (exit code: ${status})\n" >&2
-    redis_pid="$(cat ${redis_pid_file} 2> /dev/null)"
-    if [[ ! -z "${redis_pid}" ]]; then
-        kill -TERM ${redis_pid}
-        tail --pid=${redis_pid} -f /dev/null > /dev/null 2>&1
-    fi
     exit 1
 fi

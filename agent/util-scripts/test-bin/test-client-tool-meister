@@ -32,10 +32,15 @@ function register {
     else
         local remote_arg=" --remote ${2}"
     fi
-    pbench-register-tool --group "${group}" --name ${1}${remote_arg} -- --interval=42 --options=forty-two
+    if [[ -z "${3}" ]]; then
+        local label_arg=""
+    else
+        local label_arg=" --label ${3}"
+    fi
+    pbench-register-tool --group "${group}" --name ${1}${remote_arg}${label_arg} -- --interval=42 --options=forty-two
     status=${?}
     if [[ ${status} -ne 0 ]]; then
-        printf -- "ERROR - \"pbench-register-tool --group %s --name %s\" failed to execute successfully (exit code: %s)\n" "${group}" "${1}${remote_arg}" "${status}" >&2
+        printf -- "ERROR - \"pbench-register-tool --group %s --name %s\" failed to execute successfully (exit code: %s)\n" "${group}" "${1}${remote_arg}${label_arg}" "${status}" >&2
         exit 1
     fi
 }
@@ -46,8 +51,8 @@ register iostat
 
 if [[ "${2}" == "with-remotes" ]]; then
     register mpstat remote_a.example.com
-    register mpstat remote_b.example.com
-    register mpstat remote_c.example.com
+    register mpstat remote_b.example.com blue
+    register mpstat remote_c.example.com red
 fi
 
 # We created the benchmark_run_dir directory as the tool meister expects it to
@@ -62,6 +67,8 @@ fi
 function _timeout {
     timeout --kill-after=30 --signal TERM 60 $*
 }
+
+source ${_script_path}/common-tm-cleanup
 
 PBENCH_TM_BIND_HOSTNAME="localhost" _timeout pbench-tool-meister-start --sysinfo="${sysinfo}" "${group}"
 status=${?}

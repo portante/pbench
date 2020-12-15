@@ -60,13 +60,13 @@ Collecting system information
 /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg
 /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com
 /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com/contents.lis
-/var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/tm-sysinfo.err
-/var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/tm-sysinfo.out
+/var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com/tm-sysinfo.err
+/var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com/tm-sysinfo.out
 /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end
 /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end/testhost.example.com
 /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end/testhost.example.com/contents.lis
-/var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end/tm-sysinfo.err
-/var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end/tm-sysinfo.out
+/var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end/testhost.example.com/tm-sysinfo.err
+/var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end/testhost.example.com/tm-sysinfo.out
 /var/tmp/pbench-test-utils/pbench/mock-run/tm
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/pbench-tool-data-sink.err
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/pbench-tool-data-sink.log
@@ -180,8 +180,8 @@ port 17001
 # Redis is now ready to exit, bye bye...
 --- mock-run/tm/redis.log file contents
 +++ mock-run/tm/tm-default-testhost.example.com.err file contents
-INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg block,security_mitigations,sos 
-INFO pbench-tool-meister sysinfo -- testhost.example.com: sysinfo send (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg
+INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com block,security_mitigations,sos parallel
+INFO pbench-tool-meister sysinfo -- testhost.example.com: sysinfo send (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com
 INFO pbench-tool-meister start -- iostat: start_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/iostat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com --interval=42 --options=forty-two
 INFO pbench-tool-meister start -- mpstat: start_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com --interval=42 --options=forty-two
 INFO pbench-tool-meister stop -- iostat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/iostat --stop --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com --interval=42 --options=forty-two
@@ -196,16 +196,16 @@ INFO pbench-tool-meister stop -- mpstat: stop_tool -- /var/tmp/pbench-test-utils
 INFO pbench-tool-meister wait -- waiting for stop iostat
 INFO pbench-tool-meister wait -- waiting for stop mpstat
 INFO pbench-tool-meister send_tools -- testhost.example.com: send_tools (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com
-INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end block,security_mitigations,sos 
-INFO pbench-tool-meister sysinfo -- testhost.example.com: sysinfo send (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end
+INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end/testhost.example.com block,security_mitigations,sos parallel
+INFO pbench-tool-meister sysinfo -- testhost.example.com: sysinfo send (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end/testhost.example.com
 INFO pbench-tool-meister __exit__ -- testhost.example.com: terminating
 --- mock-run/tm/tm-default-testhost.example.com.err file contents
 +++ mock-run/tm/tm-default-testhost.example.com.out file contents
 --- mock-run/tm/tm-default-testhost.example.com.out file contents
 +++ mock-run/tm/tm.logs file contents
 pbench-tool-meister-start - verify logging channel up
-testhost.example.com 0000 INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg block,security_mitigations,sos 
-testhost.example.com 0001 INFO pbench-tool-meister sysinfo -- testhost.example.com: sysinfo send (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg
+testhost.example.com 0000 INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com block,security_mitigations,sos parallel
+testhost.example.com 0001 INFO pbench-tool-meister sysinfo -- testhost.example.com: sysinfo send (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com
 testhost.example.com 0002 INFO pbench-tool-meister start -- iostat: start_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/iostat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com --interval=42 --options=forty-two
 testhost.example.com 0003 INFO pbench-tool-meister start -- mpstat: start_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com --interval=42 --options=forty-two
 testhost.example.com 0004 INFO pbench-tool-meister stop -- iostat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/iostat --stop --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com --interval=42 --options=forty-two
@@ -220,14 +220,14 @@ testhost.example.com 0012 INFO pbench-tool-meister stop -- mpstat: stop_tool -- 
 testhost.example.com 0013 INFO pbench-tool-meister wait -- waiting for stop iostat
 testhost.example.com 0014 INFO pbench-tool-meister wait -- waiting for stop mpstat
 testhost.example.com 0015 INFO pbench-tool-meister send_tools -- testhost.example.com: send_tools (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/1-iter-one/sample42/tools-default/testhost.example.com
-testhost.example.com 0016 INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end block,security_mitigations,sos 
-testhost.example.com 0017 INFO pbench-tool-meister sysinfo -- testhost.example.com: sysinfo send (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end
+testhost.example.com 0016 INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end/testhost.example.com block,security_mitigations,sos parallel
+testhost.example.com 0017 INFO pbench-tool-meister sysinfo -- testhost.example.com: sysinfo send (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end/testhost.example.com
 testhost.example.com 0018 INFO pbench-tool-meister __exit__ -- testhost.example.com: terminating
 --- mock-run/tm/tm.logs file contents
 +++ test-execution.log file contents
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/cp -rL /etc/ssh/ssh_config.d /var/tmp/pbench-test-utils/pbench/mock-run/
-/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg block,security_mitigations,sos 
-/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end block,security_mitigations,sos 
+/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com block,security_mitigations,sos parallel
+/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end/testhost.example.com block,security_mitigations,sos parallel
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x iostat
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x iostat
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x mpstat
