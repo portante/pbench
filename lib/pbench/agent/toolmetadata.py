@@ -6,7 +6,7 @@ import json
 
 
 class ToolMetadataError(Exception):
-    """ToolMetadataError - simple excepiton class for all exceptions raised by the
+    """ToolMetadataError - simple exception class for all exceptions raised by the
     ToolMetadata class.
     """
 
