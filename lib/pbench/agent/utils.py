@@ -165,15 +165,15 @@ def collect_local_info(pbench_bin):
     from running the hostname command with different options.
     """
     try:
-        version = (pbench_bin / "VERSION").read_text()
+        version = (pbench_bin / "VERSION").read_text().strip()
     except Exception:
         version = "(unknown)"
     try:
-        seqno = (pbench_bin / "SEQNO").read_text()
+        seqno = (pbench_bin / "SEQNO").read_text().strip()
     except Exception:
         seqno = ""
     try:
-        sha1 = (pbench_bin / "SHA1").read_text()
+        sha1 = (pbench_bin / "SHA1").read_text().strip()
     except Exception:
         sha1 = "(unknown)"
 
