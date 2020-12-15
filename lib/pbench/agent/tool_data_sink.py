@@ -668,6 +668,8 @@ class ToolDataSink(Bottle):
         version, seqno, sha1, hostdata = collect_local_info(self.pbench_bin)
         rpm_version = f"v{version}-{seqno}g{sha1}"
         mdlog.set(section, "rpm-version", rpm_version)
+        rpm_versions = dict()
+        rpm_versions[rpm_version] = 1
         mdlog.set(section, "script", self.optional_md["script"])
 
         section = "controller"
@@ -705,24 +707,40 @@ class ToolDataSink(Bottle):
             mdlog.set(section, "hostname-A", tm["hostname_A"])
             mdlog.set(section, "hostname-I", tm["hostname_I"])
             ver, seq, sha = tm["version"], tm["seqno"], tm["sha1"]
-            mdlog.set(section, "rpm-version", f"v{ver}-{seq}g{sha}")
+            rpm_version = f"v{ver}-{seq}g{sha}"
+            try:
+                rpm_versions[rpm_version] += 1
+            except KeyError:
+                rpm_versions[rpm_version] = 1
+            mdlog.set(section, "rpm-version", rpm_version)
 
-            # Compatibility - keep each tool with options listed
             for tool, opts in tm["tools"].items():
+                # Compatibility - keep each tool with options listed
                 mdlog.set(section, tool, opts)
 
-        for host, tm in sorted(tms.items()):
-            for tool, opts in tm["tools"].items():
-                section = f"tools/{host}/{tool}"
-                mdlog.add_section(section)
-                mdlog.set(section, "options", opts)
+                # New way is to give each tool a separate section storing the
+                # options and install results individually.
+                new_section = f"tools/{host}/{tool}"
+                mdlog.add_section(new_section)
+                mdlog.set(new_section, "options", opts)
                 try:
                     code, msg = tm["installs"][tool]
                 except KeyError:
                     pass
                 else:
-                    mdlog.set(section, "install_check_status_code", str(code))
-                    mdlog.set(section, "install_check_output", msg)
+                    mdlog.set(new_section, "install_check_status_code", str(code))
+                    mdlog.set(new_section, "install_check_output", msg)
+
+        # Review how many different RPM versions we have accumulated.
+        rpm_versions_cnt = len(rpm_versions.keys())
+        if rpm_versions_cnt > 1:
+            self.logger.warning(
+                "Tool Meisters do not share the same RPM versions: %r", rpm_versions
+            )
+            section = "run"
+            mdlog.set(
+                section, "tool_meister_version_mismatch_count", f"{rpm_versions_cnt}"
+            )
 
         with (mdlog_name).open("w") as fp:
             mdlog.write(fp)
