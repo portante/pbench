@@ -1304,7 +1304,7 @@ class ToolDataSink(Bottle):
 def main(argv):
     _prog = Path(argv[0])
     PROG = _prog.name
-    pbench_bin = _prog.parent.parent.parent
+    pbench_bin = _prog.parent.parent
 
     logger = logging.getLogger(PROG)
     fh = logging.FileHandler(f"{PROG}.log")

@@ -658,7 +658,12 @@ def main(_prog, cli_params):
             # since it will daemonize itself and this child pid will be
             # replaced by a new pid.
             status = tds_main(
-                ["pbench-tool-data-sink", "localhost", str(redis_port), tds_param_key]
+                [
+                    PROG.parent / "pbench-tool-data-sink",
+                    "localhost",
+                    str(redis_port),
+                    tds_param_key,
+                ]
             )
             sys.exit(status)
         else:
