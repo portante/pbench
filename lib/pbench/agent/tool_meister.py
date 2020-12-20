@@ -84,26 +84,25 @@ class PersistentTool:
         self.name = name
         self.tool_opts = tool_opts.split(" ")
         self.logger = logger
-        self.install_path = None
-
-        # Looking for required --inst option
-        # Reformatting appropriately if found
+        self.process = None
+        # Looking for required "--inst" option, reformatting appropriately if
+        # found.
         for opt in self.tool_opts:
             if opt.startswith("--inst="):
-                if opt[len(opt) - 1] == "\n":
-                    self.install_path = opt[7 : len(opt) - 1]
+                if opt[-1] == "\n":
+                    self.install_path = opt[7:-1]
                 else:
                     self.install_path = opt[7:]
-                self.logger.debug("FOUND")
-            else:
-                self.logger.debug("NOT FOUND SOMEHOW")
-
-        self.process = None
-        self.failure = False
+                self.logger.debug(
+                    "install path for tool %s, %s", name, self.install_path
+                )
+                break
+        else:
+            self.install_path = None
+            self.logger.debug("missing install path for tool %s", name)
 
     def start(self):
         if self.install_path is None:
-            self.failure = True
             self.logger.error(
                 "No install path properly given as persistent tool option, see /opt/pbench-agent/nodexporter --help"
             )
@@ -116,11 +115,10 @@ class PersistentTool:
                 self.logger.info(
                     self.install_path + "/node_exporter" + " does not exist"
                 )
-                self.failure = True
                 return 0
 
             args = [self.install_path + "/node_exporter"]
-            self.process = subprocess.Popen(
+            process = subprocess.Popen(
                 args, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
             )
         elif self.name == "dcgm":
@@ -134,26 +132,29 @@ class PersistentTool:
             script_path = self.install_path + "/samples/scripts/dcgm_prometheus.py"
             if not os.path.isfile(script_path):
                 self.logger.info(script_path + " does not exist")
-                self.failure = True
                 return 0
 
             args = [f"python2 {script_path}"]
-            self.process = subprocess.Popen(args, shell=True)
+            process = subprocess.Popen(
+                args, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, shell=True
+            )
         else:
             self.logger.error("Invalid persistent tool name")
-            self.failure = True
             return 0
 
+        self.process = process
+        self.logger.info("Started persistent tool %s, %r", self.name, args)
         return 1
 
     def stop(self):
-        if not self.failure:
-            self.process.terminate()
-            self.process.wait()
-            return 1
+        if self.process is None:
+            self.logger.error("Nothing to terminate")
+            return 0
 
-        self.logger.error("Nothing to terminate")
-        return 0
+        self.process.terminate()
+        self.process.wait()
+        self.logger.info("Stopped persistent tool %s", self.name)
+        return 1
 
 
 class ToolException(Exception):

@@ -37,7 +37,11 @@ function register {
     else
         local label_arg=" --label ${3}"
     fi
-    pbench-register-tool --group "${group}" --name ${1}${remote_arg}${label_arg} -- --interval=42 --options=forty-two
+    if [[ "${1}" == "node-exporter" || "${1}" == "dcgm" ]]; then
+        pbench-register-tool --group "${group}" --name ${1}${remote_arg}${label_arg} -- --inst=${_script_path}
+    else
+        pbench-register-tool --group "${group}" --name ${1}${remote_arg}${label_arg} -- --interval=42 --options=forty-two
+    fi
     status=${?}
     if [[ ${status} -ne 0 ]]; then
         printf -- "ERROR - \"pbench-register-tool --group %s --name %s\" failed to execute successfully (exit code: %s)\n" "${group}" "${1}${remote_arg}${label_arg}" "${status}" >&2
@@ -45,14 +49,15 @@ function register {
     fi
 }
 
-# Always register a local tool
+# Always register local tools, transient and persistent
 register mpstat
-register iostat
+register dcgm
 
 if [[ "${2}" == "with-remotes" ]]; then
     register mpstat remote_a.example.com
     register mpstat remote_b.example.com blue
-    register mpstat remote_c.example.com red
+    register node-exporter remote_b.example.com blue
+    register dcgm remote_c.example.com red
 fi
 
 # We created the benchmark_run_dir directory as the tool meister expects it to

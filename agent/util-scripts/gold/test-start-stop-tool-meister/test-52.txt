@@ -131,7 +131,7 @@ DEBUG pbench-tool-data-sink execute -- published pbench-agent-cli-to-client
 DEBUG pbench-tool-data-sink fetch_message -- next pbench-agent-cli-from-client
 DEBUG pbench-tool-data-sink fetch_message -- payload from pbench-agent-cli-from-client: {'type': 'message', 'pattern': None, 'channel': b'pbench-agent-cli-from-client', 'data': b'{"action": "init", "group": "mygroup", "directory": "/var/tmp/pbench-test-utils/pbench/mock-run/tools-mygroup", "args": null}'}
 DEBUG pbench-tool-data-sink fetch_message -- channel pbench-agent-cli-from-client payload, '{"action": "init", "group": "mygroup", "directory": "/var/tmp/pbench-test-utils/pbench/mock-run/tools-mygroup", "args": null}'
-DEBUG pbench-tool-data-sink execute_action -- {}
+DEBUG pbench-tool-data-sink execute_action -- No persistent tools to init
 DEBUG pbench-tool-data-sink _forward_tms -- publish pbench-agent-cli-to-tms
 DEBUG pbench-tool-data-sink _forward_tms -- published pbench-agent-cli-to-tms
 DEBUG pbench-tool-data-sink _forward_tms -- posted TM action message, {'action': 'init', 'group': 'mygroup', 'directory': '/var/tmp/pbench-test-utils/pbench/mock-run/tools-mygroup', 'args': None}

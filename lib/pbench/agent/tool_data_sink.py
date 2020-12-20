@@ -35,7 +35,6 @@ import redis
 
 from bottle import Bottle, ServerAdapter, request, abort
 
-from pbench.agent import PbenchAgentConfig
 from pbench.agent.constants import (
     tds_port,
     tm_allowed_actions,
@@ -141,45 +140,19 @@ class DataSinkWsgiServer(ServerAdapter):
         self._server.shutdown()
 
 
-def _create_from_template(template, context, logger):
-    """Helper method used to generate the contents of a file given a Jinja
-    template and its required context.
-
-    Returns a string representing the contents of a file, or None if the
-    rendering from the template failed.
-    """
-    try:
-        inst_dir = PbenchAgentConfig(
-            os.environ["_PBENCH_AGENT_CONFIG"]
-        ).pbench_install_dir
-    except Exception as exc:
-        logger.error(
-            "Unexpected error encountered logging pbench agent configuration: '%s'",
-            exc,
-        )
-        return None
-
-    template_dir = Environment(
-        autoescape=False,
-        loader=FileSystemLoader(os.path.join(inst_dir, "templates")),
-        trim_blocks=False,
-        lstrip_blocks=False,
-    )
-    try:
-        filled = template_dir.get_template(template).render(context)
-        return filled
-    except Exception as exc:
-        logger.error("File creation failed: '%s'", exc)
-        return None
-
-
 class BaseCollector:
     """Abstract class for persistent tool data collectors"""
 
     allowed_tools = {"noop-collector": None}
 
     def __init__(
-        self, benchmark_run_dir, tool_group, host_tools_dict, logger, tool_metadata
+        self,
+        pbench_bin,
+        benchmark_run_dir,
+        tool_group,
+        host_tools_dict,
+        logger,
+        tool_metadata,
     ):
         self.run = None
         self.benchmark_run_dir = benchmark_run_dir
@@ -188,14 +161,50 @@ class BaseCollector:
         self.logger = logger
         self.tool_metadata = tool_metadata
         self.tool_group_dir = self.benchmark_run_dir / f"tools-{self.tool_group}"
+        self.template_dir = Environment(
+            autoescape=False,
+            loader=FileSystemLoader(pbench_bin / "templates"),
+            trim_blocks=False,
+            lstrip_blocks=False,
+        )
 
     def launch(self):
-        pass
+        """launch - Abstract method for launching a persistent tool data
+        collector.
+
+        Must be overriden by the sub-class.
+
+        Returns 1 on success, 0 on failure.
+        """
+        assert False, "Must be overriden by sub-class"
+
+    def render_from_template(self, template, context):
+        """render_from_template - Helper method used to generate the contents
+        of a file given a Jinja template and its required context.
+
+        Returns a string representing the contents of a file, or None if the
+        rendering from the template failed.
+        """
+        try:
+            filled = self.template_dir.get_template(template).render(context)
+        except Exception as exc:
+            self.logger.error(
+                "template, %s, failed to render with context, %r: %r",
+                template,
+                context,
+                exc,
+            )
+            return None
+        else:
+            return filled
 
     def terminate(self):
+        """terminate - shutdown the persistent tool collector.
+
+        Returns 1 on success, 0 on failure.
+        """
         if not self.run:
             return 0
-
         try:
             self.run.terminate()
             self.run.wait()
@@ -213,35 +222,23 @@ class PromCollector(BaseCollector):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.volume = self.tool_group_dir / "prometheus"
+        self.tool_context = []
+        for host, tools in self.host_tools_dict.items():
+            for tool in tools:
+                port = self.tool_metadata.getProperties(tool)["port"]
+                self.tool_context.append(
+                    dict(hostname=f"{host}_{tool}", hostport=f"{host}:{port}")
+                )
+        if not self.tool_context:
+            raise Exception("Expected prometheus persistent tool context not found")
 
     def launch(self):
-        if not find_executable("podman"):
-            self.logger.error(
-                "Podman is not installed on this system (required by some registered tools, aborting launch)"
-            )
-            return 0
-
-        tool_context = []
+        yml = self.render_from_template("prometheus.yml", dict(tools=self.tool_context))
+        assert yml is not None, f"Logic bomb!  {self.tool_context!r}"
         with open("prometheus.yml", "w") as config:
-            for host in self.host_tools_dict:
-                for tool in self.host_tools_dict[host]:
-                    tool_dict = {}
-                    port = self.tool_metadata.getProperties(tool)["port"]
-                    tool_dict["hostname"] = host + "_" + tool
-                    tool_dict["hostport"] = host + ":" + port
-                    tool_context.append(tool_dict)
-            if tool_context:
-                tool_context = {"tools": tool_context}
-                yml = _create_from_template("prometheus.yml", tool_context, self.logger)
-                config.write(yml)
+            config.write(yml)
 
         with open("prom.log", "w") as prom_logs:
-            if not tool_context:
-                prom_logs.write(
-                    "Prometheus launch aborted, no persistent tools registered"
-                )
-                return 0
-
             args = ["podman", "pull", "quay.io/prometheus/prometheus"]
             try:
                 prom_pull = subprocess.Popen(args, stdout=prom_logs, stderr=prom_logs)
@@ -285,10 +282,8 @@ class PromCollector(BaseCollector):
         args = [
             "tar",
             "--remove-files",
-            "--exclude",
-            "prometheus/prometheus_data.tar.gz",
-            "-zcvf",
-            f"{self.volume}/prometheus_data.tar.gz",
+            "-zcf",
+            f"{self.tool_group_dir}/prometheus_data.tar.gz",
             "-C",
             f"{self.tool_group_dir}/",
             "prometheus",
@@ -575,11 +570,6 @@ class ToolDataSink(Bottle):
                 # The "localhost" tool meister instance does not send data
                 # to the tool data sink, it just writes it locally.
                 tm["posted"] = None
-            elif not transient_tools:
-                # Only Tool Meisters with at least one transient tool will
-                # send data to a data sink, so ignore those Tool Meisters
-                # without any.
-                tm["posted"] = None
             else:
                 # The `posted` field is "dormant" to start (as set below),
                 # "waiting" when we transition to the "send" state, "dormant"
@@ -842,7 +832,7 @@ class ToolDataSink(Bottle):
                 self._cv.wait()
         return
 
-    def _change_tm_tracking(self, curr, new):
+    def _change_tm_tracking(self, action, curr, new):
         """_change_tm_tracking - update the posted action from the current
         expected value to the target new value in the tracking dictionary.
 
@@ -851,6 +841,10 @@ class ToolDataSink(Bottle):
         assert self._tm_tracking is not None, "Logic bomb!  self._tm_tracking is None"
         for hostname, tm in self._tm_tracking.items():
             if tm["posted"] is None:
+                continue
+            if action == "send" and not tm["transient_tools"]:
+                # Ignore any Tool Meisters who do not have any transient
+                # tools.
                 continue
             assert (
                 tm["posted"] == curr
@@ -1033,10 +1027,13 @@ class ToolDataSink(Bottle):
                             prom_tools.append(tool)
                     if len(prom_tools) > 0:
                         prom_tool_dict[self._tm_tracking[tm]["hostname"]] = prom_tools
-                self.logger.debug(prom_tool_dict)
-
                 if prom_tool_dict:
+                    self.logger.debug(
+                        "init persistent tools on tool meisters: %s",
+                        ", ".join(list(prom_tool_dict.keys())),
+                    )
                     self._prom_server = PromCollector(
+                        self.pbench_bin,
                         self.benchmark_run_dir,
                         self.tool_group,
                         prom_tool_dict,
@@ -1044,6 +1041,8 @@ class ToolDataSink(Bottle):
                         self.tool_metadata,
                     )
                     self._prom_server.launch()
+                else:
+                    self.logger.debug("No persistent tools to init")
                 # Forward to TMs
                 ret_val = self._forward_tms_and_wait(data)
             elif action == "end":
@@ -1069,7 +1068,7 @@ class ToolDataSink(Bottle):
                 ret_val = self._forward_tms(data)
                 if ret_val == 0:
                     # Wait for all data
-                    self._change_tm_tracking("dormant", "waiting")
+                    self._change_tm_tracking(action, "dormant", "waiting")
                     self._wait_for_all_data()
                     # At this point all tracking data should be "dormant" again.
                     ret_val = self._wait_for_tms()
@@ -1157,6 +1156,12 @@ class ToolDataSink(Bottle):
                             tm_tracker["posted"],
                         )
                         abort(400, "No data expected from a Tool Meister")
+                    elif self.action == "send":
+                        # Only Tool Meisters with at least one transient tool
+                        # will send data to a data sink, so return an error to
+                        # those Tool Meisters without any.
+                        if not tm_tracker["transient_tools"]:
+                            abort(400, "Not expecting tool data from Tool Meister")
 
             try:
                 content_length = int(request["CONTENT_LENGTH"])
@@ -1343,6 +1348,12 @@ def main(argv):
     cp_path = find_executable("cp")
     if cp_path is None:
         logger.error("External 'cp' executable not found")
+        return 2
+
+    global podman_path
+    podman_path = find_executable("podman")
+    if podman_path is None:
+        logger.error("External 'podman' executable not found")
         return 2
 
     try:

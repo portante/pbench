@@ -21,13 +21,15 @@ export _testdir=${_testroot}/pbench
 # Copy util-scripts execution environment to _testroot
 _testopt=${_testroot}/opt/pbench-agent
 res=0
-mkdir -p ${_testopt}/config ${_testopt}/util-scripts/tool-meister ${_testopt}/tool-scripts ${_testopt}/lib ${_testopt}/unittest-scripts ${_testopt}/common/lib
+mkdir -p ${_testopt}/config ${_testopt}/templates ${_testopt}/util-scripts/tool-meister ${_testopt}/tool-scripts ${_testopt}/lib ${_testopt}/unittest-scripts ${_testopt}/common/lib
 let res=res+${?}
 cat ${_tdir}/../base.ut.pre ${_tdir}/../base ${_tdir}/../base.ut.post > ${_testopt}/base
 let res=res+${?}
 cp -rL ${_tdir}/../config/* ${_testopt}/config/
 # rename pbench-agent.cfg - we need to process it for each test but it gets cleaned up after each test.
 mv ${_testopt}/config/pbench-agent.cfg ${_testopt}/config/pbench-agent.cfg.orig
+let res=res+${?}
+cp -a ${_tdir}/../templates/* ${_testopt}/templates/
 let res=res+${?}
 cp -a ${_tdir}/{require-rpm,pbench-*} ${_testopt}/util-scripts/
 let res=res+${?}
