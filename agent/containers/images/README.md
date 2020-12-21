@@ -24,7 +24,7 @@ and place them in a single yum/dnf repository accessible via HTTPS.  By
 default, we use Fedora COPR repos under the `ndokos` user (one can
 override the yum/dnf repos and user via the `URL_PREFIX` and `USER`
 environment variables, and use `pbench-test` repos by setting the `TEST`
-environment variable to `test`). 
+environment variable to `test`).
 
 Once the proper RPMs are available in the target repo, the default
 `Makefile` target, `all`, will build all the default images, and tag
@@ -103,3 +103,13 @@ NOTE WELL: Each separate tag for each image needs to be pushed to
 the non-local container image repository.  This does NOT result in
 multiple image copies over the wire using up network bandwidth, as
 `buildah push` is smart enough to push the actual image only once.
+
+====
+
+Tool Data Sink Container
+ * pbench-agent RPM
+ * prometheus2 RPM
+
+Tool Miester Container
+ * pbench-agent RPM
+ * node_exporter RPM
