@@ -49,7 +49,7 @@ util-scripts = \
 	pbench-tool-meister-stop \
 	pbench-tool-trigger \
 	pbench-verify-sysinfo-options \
-	README \
+	README.md \
 	require-rpm \
 	tool-meister
 
