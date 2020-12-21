@@ -132,13 +132,10 @@ Collecting system information
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/pbench-tool-data-sink.err
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/pbench-tool-data-sink.log
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/pbench-tool-data-sink.out
-/var/tmp/pbench-test-utils/pbench/mock-run/tm/pcp-meister.log
-/var/tmp/pbench-test-utils/pbench/mock-run/tm/pcp.log
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/prom.log
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/prometheus.yml
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/redis.conf
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/redis.log
-/var/tmp/pbench-test-utils/pbench/mock-run/tm/remote
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/tm-lite-remote_a.example.com.err
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/tm-lite-remote_a.example.com.out
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/tm-lite-remote_b.example.com.err
@@ -272,6 +269,8 @@ install_check_output = mpstat: pbench-sysstat-12.0.3 is installed
 
 [tools/remote_b.example.com/node-exporter]
 options = --inst=/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts
+install_check_status_code = 0
+install_check_output = node_exporter tool properly installed
 
 [tools/remote_c.example.com]
 label = red
@@ -286,9 +285,13 @@ pcp = --interval=42 --options=forty-two
 
 [tools/remote_c.example.com/dcgm]
 options = --inst=/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts
+install_check_status_code = 0
+install_check_output = dcgm tool properly installed
 
 [tools/remote_c.example.com/pcp]
 options = --interval=42 --options=forty-two
+install_check_status_code = 0
+install_check_output = pcp tool (pmcd) properly installed
 
 [tools/testhost.example.com]
 label = 
@@ -303,6 +306,8 @@ mpstat = --interval=42 --options=forty-two
 
 [tools/testhost.example.com/dcgm]
 options = --inst=/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts
+install_check_status_code = 0
+install_check_output = dcgm tool properly installed
 
 [tools/testhost.example.com/mpstat]
 options = --interval=42 --options=forty-two
@@ -334,10 +339,6 @@ INFO pbench-tool-data-sink web_server_run -- Running Bottle web server ...
 --- mock-run/tm/pbench-tool-data-sink.log file contents
 +++ mock-run/tm/pbench-tool-data-sink.out file contents
 --- mock-run/tm/pbench-tool-data-sink.out file contents
-+++ mock-run/tm/pcp-meister.log file contents
---- mock-run/tm/pcp-meister.log file contents
-+++ mock-run/tm/pcp.log file contents
---- mock-run/tm/pcp.log file contents
 +++ mock-run/tm/prom.log file contents
 --- mock-run/tm/prom.log file contents
 +++ mock-run/tm/prometheus.yml file contents
@@ -383,9 +384,6 @@ port 17001
 * Removing the pid file.
 # Redis is now ready to exit, bye bye...
 --- mock-run/tm/redis.log file contents
-+++ mock-run/tm/remote file contents
-remote_c.example.com n n PCP_LOG_DIR/pmlogger/remote_c.example.com -r -T24h10m -c config.remote_c.example.com
---- mock-run/tm/remote file contents
 +++ mock-run/tm/tm-lite-remote_a.example.com.err file contents
 INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/tmp/tm.lite.NNNNN.nnnnnnnn/remote_a.example.com block,security_mitigations,sos parallel
 INFO pbench-tool-meister _send_directory -- remote_a.example.com: PUT sysinfo-data completed lite /var/tmp/pbench-test-utils/pbench/tmp/tm.lite.NNNNN.nnnnnnnn/remote_a.example.com
@@ -425,8 +423,8 @@ INFO pbench-tool-meister __exit__ -- remote_b.example.com: terminating
 +++ mock-run/tm/tm-lite-remote_c.example.com.err file contents
 INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/tmp/tm.lite.NNNNN.nnnnnnnn/red:remote_c.example.com block,security_mitigations,sos parallel
 INFO pbench-tool-meister _send_directory -- remote_c.example.com: PUT sysinfo-data completed lite /var/tmp/pbench-test-utils/pbench/tmp/tm.lite.NNNNN.nnnnnnnn/red:remote_c.example.com
-INFO pbench-tool-meister start -- Started persistent tool dcgm, ['python2 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/samples/scripts/dcgm_prometheus.py']
-INFO pbench-tool-meister start -- Started persistent tool pcp, ['/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/podman', 'run', '--network', 'host', '--name', 'exposer-21cb03de8b4ae66fb719445770cac06d', 'quay.io/pbench/pcp-pmcd']
+INFO pbench-tool-meister start -- Started persistent tool dcgm, ['python2', '/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/samples/scripts/dcgm_prometheus.py']
+INFO pbench-tool-meister start -- Started persistent tool pcp, ['/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pmcd', '--foreground', '--socket=./pmcd.socket', '--port=55677', '--config=/var/tmp/pbench-test-utils/opt/pbench-agent/templates/pmcd.conf']
 INFO pbench-tool-meister stop -- Stopped persistent tool dcgm
 INFO pbench-tool-meister stop -- Stopped persistent tool pcp
 INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/tmp/tm.lite.NNNNN.nnnnnnnn/red:remote_c.example.com block,security_mitigations,sos parallel
@@ -438,7 +436,7 @@ INFO pbench-tool-meister __exit__ -- remote_c.example.com: terminating
 +++ mock-run/tm/tm-lite-testhost.example.com.err file contents
 INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com block,security_mitigations,sos parallel
 INFO pbench-tool-meister sysinfo -- testhost.example.com: sysinfo send (no-op) lite /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com
-INFO pbench-tool-meister start -- Started persistent tool dcgm, ['python2 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/samples/scripts/dcgm_prometheus.py']
+INFO pbench-tool-meister start -- Started persistent tool dcgm, ['python2', '/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/samples/scripts/dcgm_prometheus.py']
 INFO pbench-tool-meister start -- mpstat: start_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com --interval=42 --options=forty-two
 INFO pbench-tool-meister stop -- mpstat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --stop --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com --interval=42 --options=forty-two
 INFO pbench-tool-meister wait -- waiting for stop mpstat
@@ -486,8 +484,8 @@ remote_b.example.com 0013 INFO pbench-tool-meister _send_directory -- remote_b.e
 remote_b.example.com 0014 INFO pbench-tool-meister __exit__ -- remote_b.example.com: terminating
 remote_c.example.com 0000 INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/tmp/tm.lite.NNNNN.nnnnnnnn/red:remote_c.example.com block,security_mitigations,sos parallel
 remote_c.example.com 0001 INFO pbench-tool-meister _send_directory -- remote_c.example.com: PUT sysinfo-data completed lite /var/tmp/pbench-test-utils/pbench/tmp/tm.lite.NNNNN.nnnnnnnn/red:remote_c.example.com
-remote_c.example.com 0002 INFO pbench-tool-meister start -- Started persistent tool dcgm, ['python2 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/samples/scripts/dcgm_prometheus.py']
-remote_c.example.com 0003 INFO pbench-tool-meister start -- Started persistent tool pcp, ['/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/podman', 'run', '--network', 'host', '--name', 'exposer-21cb03de8b4ae66fb719445770cac06d', 'quay.io/pbench/pcp-pmcd']
+remote_c.example.com 0002 INFO pbench-tool-meister start -- Started persistent tool dcgm, ['python2', '/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/samples/scripts/dcgm_prometheus.py']
+remote_c.example.com 0003 INFO pbench-tool-meister start -- Started persistent tool pcp, ['/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pmcd', '--foreground', '--socket=./pmcd.socket', '--port=55677', '--config=/var/tmp/pbench-test-utils/opt/pbench-agent/templates/pmcd.conf']
 remote_c.example.com 0004 INFO pbench-tool-meister stop -- Stopped persistent tool dcgm
 remote_c.example.com 0005 INFO pbench-tool-meister stop -- Stopped persistent tool pcp
 remote_c.example.com 0006 INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/tmp/tm.lite.NNNNN.nnnnnnnn/red:remote_c.example.com block,security_mitigations,sos parallel
@@ -495,7 +493,7 @@ remote_c.example.com 0007 INFO pbench-tool-meister _send_directory -- remote_c.e
 remote_c.example.com 0008 INFO pbench-tool-meister __exit__ -- remote_c.example.com: terminating
 testhost.example.com 0000 INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com block,security_mitigations,sos parallel
 testhost.example.com 0001 INFO pbench-tool-meister sysinfo -- testhost.example.com: sysinfo send (no-op) lite /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com
-testhost.example.com 0002 INFO pbench-tool-meister start -- Started persistent tool dcgm, ['python2 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/samples/scripts/dcgm_prometheus.py']
+testhost.example.com 0002 INFO pbench-tool-meister start -- Started persistent tool dcgm, ['python2', '/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/samples/scripts/dcgm_prometheus.py']
 testhost.example.com 0003 INFO pbench-tool-meister start -- mpstat: start_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com --interval=42 --options=forty-two
 testhost.example.com 0004 INFO pbench-tool-meister stop -- mpstat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --stop --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-lite/testhost.example.com --interval=42 --options=forty-two
 testhost.example.com 0005 INFO pbench-tool-meister wait -- waiting for stop mpstat
@@ -530,14 +528,10 @@ testhost.example.com 0014 INFO pbench-tool-meister __exit__ -- testhost.example.
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x mpstat
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x mpstat
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x mpstat
-/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/podman kill collector-21cb03de8b4ae66fb719445770cac06d
-/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/podman kill exposer-21cb03de8b4ae66fb719445770cac06d
-/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/podman pull quay.io/pbench/pcp-pmcd
-/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/podman pull quay.io/pbench/pcp-pmlogger
-/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/podman pull quay.io/prometheus/prometheus
-/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/podman run --network host --name exposer-21cb03de8b4ae66fb719445770cac06d quay.io/pbench/pcp-pmcd
-/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/podman run --systemd always -v /var/tmp/pbench-test-utils/pbench/mock-run/tools-lite/pcp:/var/log/pcp/pmlogger:Z -v /var/tmp/pbench-test-utils/pbench/mock-run/tm/remote:/etc/pcp/pmlogger/control.d/remote:Z --network host --name collector-21cb03de8b4ae66fb719445770cac06d quay.io/pbench/pcp-pmlogger
-/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/podman run -p 9090:9090 -v /var/tmp/pbench-test-utils/pbench/mock-run/tools-lite/prometheus:/prometheus:Z -v /var/tmp/pbench-test-utils/pbench/mock-run/tm/prometheus.yml:/etc/prometheus/prometheus.yml:Z --network host quay.io/prometheus/prometheus
+/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pmcd --foreground --socket=./pmcd.socket --port=55677 --config=/var/tmp/pbench-test-utils/opt/pbench-agent/templates/pmcd.conf
+/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pmcd_wait --host=remote_c.example.com:55677 -t 30
+/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pmlogger -r -t 3s -c /var/tmp/pbench-test-utils/opt/pbench-agent/templates/pmlogger.conf --host=remote_c.example.com:55677 %Y%m%d.%H.%M
+/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/prometheus --config.file=/var/tmp/pbench-test-utils/pbench/mock-run/tm/prometheus.yml --storage.tsdb.path=/var/tmp/pbench-test-utils/pbench/mock-run/tools-lite/prometheus --web.console.libraries=/usr/share/prometheus/console_libraries --web.console.templates=/usr/share/prometheus/consoles
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/ssh -o StrictHostKeyChecking=no remote_a.example.com /var/tmp/pbench-test-utils/opt/pbench-agent/util-scripts/tool-meister/pbench-tool-meister-remote localhost 17001 tm-lite-remote_a.example.com yes
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/ssh -o StrictHostKeyChecking=no remote_b.example.com /var/tmp/pbench-test-utils/opt/pbench-agent/util-scripts/tool-meister/pbench-tool-meister-remote localhost 17001 tm-lite-remote_b.example.com yes
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/ssh -o StrictHostKeyChecking=no remote_c.example.com /var/tmp/pbench-test-utils/opt/pbench-agent/util-scripts/tool-meister/pbench-tool-meister-remote localhost 17001 tm-lite-remote_c.example.com yes

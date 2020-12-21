@@ -15,7 +15,6 @@ import json
 import logging
 import os
 import shutil
-import socket
 import subprocess
 import sys
 import tempfile
@@ -36,7 +35,6 @@ import redis
 
 from bottle import Bottle, ServerAdapter, request, abort
 
-from pbench.agent import PbenchAgentConfig
 from pbench.agent.constants import (
     tds_port,
     tm_allowed_actions,
@@ -165,16 +163,18 @@ class BaseCollector:
         """Constructor - responsible for recording the arguments, and creating
         the Environment() for template rendering.
         """
-        self.run = None
+        self.templates_path = pbench_bin / "templates"
         self.benchmark_run_dir = benchmark_run_dir
         self.tool_group = tool_group
         self.host_tools_dict = host_tools_dict
         self.tool_metadata = tool_metadata
         self.logger = logger
+
+        self.run = []
         self.tool_group_dir = self.benchmark_run_dir / f"tools-{self.tool_group}"
         self.template_dir = Environment(
             autoescape=False,
-            loader=FileSystemLoader(pbench_bin / "templates"),
+            loader=FileSystemLoader(str(self.templates_path)),
             trim_blocks=False,
             lstrip_blocks=False,
         )
@@ -214,14 +214,23 @@ class BaseCollector:
         """
         if not self.run:
             return
-        try:
-            self.run.terminate()
-            self.run.wait()
-        except Exception as exc:
-            self.logger.error(
-                "Failed to terminate expected collector process: '%s'", exc
-            )
-            raise
+        errors = 0
+        for run in self.run:
+            try:
+                run.terminate()
+                run.wait()
+            except Exception as exc:
+                self.logger.error(
+                    "Failed to terminate expected collector process: '%s'", exc
+                )
+                errors += 1
+            else:
+                if run.returncode != 0:
+                    self.logger.warning(
+                        "Collector process terminated with %d", run.returncode
+                    )
+        if errors > 0:
+            raise Exception("Failed to terminate all the collector processes")
 
 
 class PromCollector(BaseCollector):
@@ -232,6 +241,10 @@ class PromCollector(BaseCollector):
         Prometheus collector, including how to instruct prometheus to gather
         tool data.
         """
+        self.prometheus_path = find_executable("prometheus")
+        if self.prometheus_path is None:
+            raise Exception("External 'prometheus' executable not found")
+
         super().__init__(*args, **kwargs)
         self.volume = self.tool_group_dir / "prometheus"
         self.tool_context = []
@@ -243,15 +256,6 @@ class PromCollector(BaseCollector):
                 )
         if not self.tool_context:
             raise Exception("Expected prometheus persistent tool context not found")
-        try:
-            prom_reg = PbenchAgentConfig(os.environ["_PBENCH_AGENT_CONFIG"]).prom_reg
-        except Exception as exc:
-            raise Exception(
-                "Unexpected error encountered fetch pbench agent"
-                f" configuration: '{exc}'",
-            )
-        else:
-            self.prom_reg = prom_reg
 
     def launch(self):
         """launch - creates the YAML file that directs Prometheus's behavior,
@@ -264,39 +268,27 @@ class PromCollector(BaseCollector):
             config.write(yml)
 
         with open("prom.log", "w") as prom_logs:
-            args = [podman_path, "pull", self.prom_reg]
-            try:
-                prom_pull = subprocess.Popen(args, stdout=prom_logs, stderr=prom_logs)
-                prom_pull.wait()
-            except Exception as exc:
-                self.logger.error("Podman pull process failed: '%s'", exc)
-                return
-
             try:
                 os.mkdir(self.volume)
-                os.chmod(self.volume, 0o777)
+                os.chmod(self.volume, 0o775)
             except Exception as exc:
                 self.logger.error("Volume creation failed: '%s'", exc)
                 return
 
             args = [
-                podman_path,
-                "run",
-                "-p",
-                "9090:9090",
-                "-v",
-                f"{self.volume}:/prometheus:Z",
-                "-v",
-                f"{self.benchmark_run_dir}/tm/prometheus.yml:/etc/prometheus/prometheus.yml:Z",
-                "--network",
-                "host",
-                self.prom_reg,
+                self.prometheus_path,
+                f"--config.file={self.benchmark_run_dir}/tm/prometheus.yml",
+                f"--storage.tsdb.path={self.volume}",
+                "--web.console.libraries=/usr/share/prometheus/console_libraries",
+                "--web.console.templates=/usr/share/prometheus/consoles",
             ]
             try:
-                self.run = subprocess.Popen(args, stdout=prom_logs, stderr=prom_logs)
+                run = subprocess.Popen(args, stdout=prom_logs, stderr=prom_logs)
             except Exception as exc:
                 self.logger.error("Podman run process failed: '%s', %r", exc, args)
-                self.run = None
+                return
+            else:
+                self.run.append(run)
 
     def terminate(self):
         """terminate - shuts down the prometheus sub-process, and creates a
@@ -319,12 +311,17 @@ class PromCollector(BaseCollector):
             f"{self.tool_group_dir}/",
             "prometheus",
         ]
-        data_store = subprocess.Popen(args)
-        data_store.wait()
+        cp = subprocess.run(args)
+        if cp.returncode != 0:
+            self.logger.warning("Failed to tar up prometheus data: %r", args)
 
 
-class PCPCollector(BaseCollector):
+class PcpCollector(BaseCollector):
     """Persistent tool data collector for tools compatible with Prometheus"""
+
+    # Default path to the "pmlogger" executable.
+    _pmlogger_path_def = "/usr/bin/pmlogger"
+    _pmcd_wait_path_def = "/usr/libexec/pcp/bin/pmcd_wait"
 
     def __init__(self, *args, **kwargs):
         """Constructor - responsible for setting up the state needed to run
@@ -332,110 +329,106 @@ class PCPCollector(BaseCollector):
         """
         super().__init__(*args, **kwargs)
         self.volume = self.tool_group_dir / "pcp"
-        benchmark_run_dir_bytes = str(self.benchmark_run_dir).encode("utf-8")
-        suffix = hashlib.md5(benchmark_run_dir_bytes).hexdigest()
-        self.podname = f"collector-{suffix}"
-
-    def __test_conn(self):
-        # FIXME - embed this in the PCP image itself
-        if os.environ.get("_PBENCH_UNIT_TESTS"):
-            return 1
-        test = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        for host in self.host_tools_dict:
-            counter = 0
-            while counter < 3:
-                check = (host, 44321)
-                if test.connect_ex(check) == 0:
-                    break
-                else:
-                    counter += 1
-                    if counter == 3:
-                        self.logger.error(f"{host} pmcd unreachable")
-                time.sleep(1)
-        return 1
+        pmcd_wait_path = find_executable("pmcd_wait")
+        if pmcd_wait_path is None:
+            pmcd_wait_path = self._pmcd_wait_path_def
+        self.pmcd_wait_path = pmcd_wait_path
+        pmlogger_path = find_executable("pmlogger")
+        if pmlogger_path is None:
+            pmlogger_path = self._pmlogger_path_def
+        self.pmlogger_path = pmlogger_path
 
     def launch(self):
         """launch - responsible for creating the configuration file for
         collecting data from the register hosts, creates the directory for
         storing the collected data, and runs the PCP collector itself.
         """
-        global podman_path
-        pcp_remote_config = self.benchmark_run_dir / "tm" / "remote"
-        with open(pcp_remote_config, "w") as remote:
-            for host in self.host_tools_dict:
-                remote.write(
-                    f"{host} n n PCP_LOG_DIR/pmlogger/{host} -r -T24h10m -c config.{host}\n"
-                )
-
-        if not self.host_tools_dict:
+        try:
+            self.volume.mkdir()
+        except Exception as exc:
+            self.logger.error("Volume %s creation failed: '%s'", self.volume, exc)
             return
 
-        with open("pcp.log", "w") as pcp_logs:
+        # Create all the host directories for the PCP data and create all the
+        # processes which will wait for the pmcd processes to show up.
+        pmcd_wait_l = []
+        errors = 0
+        for host in self.host_tools_dict:
+            host_dir = self.volume / host
             try:
-                pcp_reg = PbenchAgentConfig(
-                    os.environ["_PBENCH_AGENT_CONFIG"]
-                ).pmlogger_reg
+                host_dir.mkdir()
             except Exception as exc:
-                self.logger.error(
-                    "Unexpected error encountered logging pbench agent configuration: '%s'",
-                    exc,
-                )
-                return
+                self.logger.error("Volume %s creation failed: '%s'", host_dir, exc)
+                errors += 1
+                continue
 
-            args = [podman_path, "pull", pcp_reg]
-            try:
-                pcp_pull = subprocess.Popen(args, stdout=pcp_logs, stderr=pcp_logs)
-                pcp_pull.wait()
-            except Exception as exc:
-                self.logger.error("Podman pull process failed: '%s'", exc)
-                return
-
-            try:
-                os.mkdir(self.volume)
-                os.chmod(self.volume, 0o777)
-            except Exception as exc:
-                self.logger.error("Volume creation failed: '%s'", exc)
-                return
             args = [
-                podman_path,
-                "run",
-                "--systemd",
-                "always",
-                "-v",
-                f"{self.volume}:/var/log/pcp/pmlogger:Z",
-                "-v",
-                f"{pcp_remote_config}:/etc/pcp/pmlogger/control.d/remote:Z",
-                "--network",
-                "host",
-                "--name",
-                self.podname,
-                pcp_reg,
+                self.pmcd_wait_path,
+                f"--host={host}:55677",
+                "-t 30",
             ]
-            try:
-                self.__test_conn()
-                self.run = subprocess.Popen(args, stdout=pcp_logs, stderr=pcp_logs)
-            except Exception as exc:
-                self.logger.error("Podman run process failed: '%s', %r", exc, args)
-                self.run = None
+            self.logger.debug("Starting pmcd_wait: %r", args)
+            with (host_dir / "pmlogger-proc.log").open("w") as pmlogger_logs:
+                try:
+                    run = subprocess.Popen(
+                        args,
+                        cwd=host_dir,
+                        stdout=pmlogger_logs,
+                        stderr=subprocess.STDOUT,
+                    )
+                except Exception as exc:
+                    self.logger.error("Pmcd_wait process failed: '%s', %r", exc, args)
+                    errors += 1
+                else:
+                    pmcd_wait_l.append((host, run))
+
+        for host, pmcd_wait in pmcd_wait_l:
+            pmcd_wait.wait()
+            if pmcd_wait.returncode != 0:
+                self.logger.error(
+                    "Pmcd_wait process failed to connect to pmcd on"
+                    " host %s:55677 after 30 seconds, %r",
+                    host,
+                    pmcd_wait.returncode,
+                )
+                errors += 1
+        if errors > 0:
+            return
+
+        # Now that we have verified all the pmcd processes are running, we can
+        # create all the loggers.
+        for host in self.host_tools_dict:
+            host_dir = self.volume / host
+            args = [
+                self.pmlogger_path,
+                "-r",
+                "-t",
+                "3s",  # FIXME: take from tools interval
+                "-c",
+                str(self.templates_path / "pmlogger.conf"),
+                f"--host={host}:55677",
+                "%Y%m%d.%H.%M",
+            ]
+            self.logger.debug("Starting pmlogger: %r", args)
+            with (host_dir / "pmlogger-proc.log").open("a+") as pmlogger_logs:
+                try:
+                    run = subprocess.Popen(
+                        args,
+                        cwd=host_dir,
+                        stdout=pmlogger_logs,
+                        stderr=subprocess.STDOUT,
+                    )
+                except Exception as exc:
+                    self.logger.error(
+                        "Pmlogger run process failed: '%s', %r", exc, args
+                    )
+                else:
+                    self.run.append(run)
 
     def terminate(self):
         """terminate - shuts down the PCP collector, and creates a tar ball of
         the collected data.
         """
-        global podman_path
-        if self.run:
-            args = [
-                podman_path,
-                "kill",
-                self.podname,
-            ]
-            try:
-                pcp_kill = subprocess.Popen(args)
-                pcp_kill.wait()
-            except Exception as exc:
-                self.logger.error("Podman kill process failed: '%s'", exc)
-                return
-
         try:
             super().terminate()
         except Exception:
@@ -453,8 +446,9 @@ class PCPCollector(BaseCollector):
             f"{self.tool_group_dir}/",
             "pcp",
         ]
-        data_store = subprocess.Popen(args)
-        data_store.wait()
+        cp = subprocess.run(args)
+        if cp.returncode != 0:
+            self.logger.warning("Failed to tar up pmlogger data: %r", args)
 
 
 class ToolDataSink(Bottle):
@@ -715,8 +709,15 @@ class ToolDataSink(Bottle):
             noop_tools = []
             persistent_tools = []
             transient_tools = []
+            failed_tools = []
             for tool_name in tools.keys():
-                if tool_name in persistent_tools_l:
+                try:
+                    code, msg = tm["installs"][tool_name]
+                except KeyError:
+                    code, msg = 0, ""
+                if code != 0:
+                    failed_tools.append(tool_name)
+                elif tool_name in persistent_tools_l:
                     persistent_tools.append(tool_name)
                 elif tool_name in BaseCollector.allowed_tools:
                     noop_tools.append(tool_name)
@@ -729,6 +730,7 @@ class ToolDataSink(Bottle):
             tm["noop_tools"] = noop_tools
             tm["persistent_tools"] = persistent_tools
             tm["transient_tools"] = transient_tools
+            tm["failed_tools"] = failed_tools
 
             if tm["hostname"] == self.hostname:
                 # The "localhost" Tool Meister instance does not send data
@@ -1007,7 +1009,7 @@ class ToolDataSink(Bottle):
             if tm["posted"] is None:
                 continue
             if action == "send" and not tm["transient_tools"]:
-                # Ignore any Tool Meisters who do not have any transient
+                # Ignore any Tool Meisters which do not have any transient
                 # tools.
                 continue
             assert (
@@ -1180,7 +1182,9 @@ class ToolDataSink(Bottle):
             if action == "init":
                 # To be safe, clear the data context to catch bad PUTs
                 self.data_ctx = None
-                # First we start all the persistent tool collectors locally.
+                # Forward to TMs
+                ret_val = self._forward_tms_and_wait(data)
+                # Start all the persistent tool collectors locally.
                 prom_tool_dict = {}
                 pcp_tool_dict = {}
                 for tm in self._tm_tracking:
@@ -1202,8 +1206,8 @@ class ToolDataSink(Bottle):
                         pcp_tool_dict[self._tm_tracking[tm]["hostname"]] = pcp_tools
                 if prom_tool_dict:
                     self.logger.debug(
-                        "init persistent tools on tool meisters: %s",
-                        ", ".join(list(prom_tool_dict.keys())),
+                        "init prometheus tools for tool meisters: %s",
+                        ", ".join(sorted(list(prom_tool_dict.keys()))),
                     )
                     self._prom_server = PromCollector(
                         self.pbench_bin,
@@ -1215,7 +1219,11 @@ class ToolDataSink(Bottle):
                     )
                     self._prom_server.launch()
                 if pcp_tool_dict:
-                    self._pcp_server = PCPCollector(
+                    self.logger.debug(
+                        "init pcp tools for tool meisters: %s",
+                        ", ".join(sorted(list(pcp_tool_dict.keys()))),
+                    )
+                    self._pcp_server = PcpCollector(
                         self.pbench_bin,
                         self.benchmark_run_dir,
                         self.tool_group,
@@ -1224,10 +1232,8 @@ class ToolDataSink(Bottle):
                         self.logger,
                     )
                     self._pcp_server.launch()
-                else:
+                if not prom_tool_dict and not pcp_tool_dict:
                     self.logger.debug("No persistent tools to init")
-                # Forward to TMs
-                ret_val = self._forward_tms_and_wait(data)
             elif action == "end":
                 # To be safe, clear the data context to catch bad PUTs
                 self.data_ctx = None
@@ -1534,12 +1540,6 @@ def main(argv):
     cp_path = find_executable("cp")
     if cp_path is None:
         logger.error("External 'cp' executable not found")
-        return 2
-
-    global podman_path
-    podman_path = find_executable("podman")
-    if podman_path is None:
-        logger.error("External 'podman' executable not found")
         return 2
 
     try:
