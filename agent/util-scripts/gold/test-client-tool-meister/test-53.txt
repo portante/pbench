@@ -124,6 +124,8 @@ mpstat = --interval=42 --options=forty-two
 
 [tools/testhost.example.com/dcgm]
 options = --inst=/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts
+install_check_status_code = 0
+install_check_output = dcgm tool properly installed
 
 [tools/testhost.example.com/mpstat]
 options = --interval=42 --options=forty-two
@@ -183,7 +185,7 @@ port 17001
 +++ mock-run/tm/tm-default-testhost.example.com.err file contents
 INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com block,security_mitigations,sos parallel
 INFO pbench-tool-meister sysinfo -- testhost.example.com: sysinfo send (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com
-INFO pbench-tool-meister start -- Started persistent tool dcgm, ['python2 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/samples/scripts/dcgm_prometheus.py']
+INFO pbench-tool-meister start -- Started persistent tool dcgm, ['python2', '/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/samples/scripts/dcgm_prometheus.py']
 INFO pbench-tool-meister start -- mpstat: start_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com --interval=42 --options=forty-two
 INFO pbench-tool-meister stop -- mpstat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --stop --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com --interval=42 --options=forty-two
 INFO pbench-tool-meister wait -- waiting for stop mpstat
@@ -203,7 +205,7 @@ INFO pbench-tool-meister __exit__ -- testhost.example.com: terminating
 pbench-tool-meister-start - verify logging channel up
 testhost.example.com 0000 INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dump -- /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com block,security_mitigations,sos parallel
 testhost.example.com 0001 INFO pbench-tool-meister sysinfo -- testhost.example.com: sysinfo send (no-op) default /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/beg/testhost.example.com
-testhost.example.com 0002 INFO pbench-tool-meister start -- Started persistent tool dcgm, ['python2 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/samples/scripts/dcgm_prometheus.py']
+testhost.example.com 0002 INFO pbench-tool-meister start -- Started persistent tool dcgm, ['python2', '/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/samples/scripts/dcgm_prometheus.py']
 testhost.example.com 0003 INFO pbench-tool-meister start -- mpstat: start_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --start --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com --interval=42 --options=forty-two
 testhost.example.com 0004 INFO pbench-tool-meister stop -- mpstat: stop_tool -- /var/tmp/pbench-test-utils/opt/pbench-agent/tool-scripts/mpstat --stop --dir=/var/tmp/pbench-test-utils/pbench/mock-run/0-iter-zero/sample42/tools-default/testhost.example.com --interval=42 --options=forty-two
 testhost.example.com 0005 INFO pbench-tool-meister wait -- waiting for stop mpstat
@@ -223,6 +225,5 @@ testhost.example.com 0014 INFO pbench-tool-meister __exit__ -- testhost.example.
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pbench-sysinfo-dump /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end/testhost.example.com block,security_mitigations,sos parallel
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x mpstat
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x mpstat
-/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/podman pull quay.io/prometheus/prometheus
-/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/podman run -p 9090:9090 -v /var/tmp/pbench-test-utils/pbench/mock-run/tools-default/prometheus:/prometheus:Z -v /var/tmp/pbench-test-utils/pbench/mock-run/tm/prometheus.yml:/etc/prometheus/prometheus.yml:Z --network host quay.io/prometheus/prometheus
+/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/prometheus --config.file=/var/tmp/pbench-test-utils/pbench/mock-run/tm/prometheus.yml --storage.tsdb.path=/var/tmp/pbench-test-utils/pbench/mock-run/tools-default/prometheus --web.console.libraries=/usr/share/prometheus/console_libraries --web.console.templates=/usr/share/prometheus/consoles
 --- test-execution.log file contents
