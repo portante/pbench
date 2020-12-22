@@ -74,89 +74,6 @@ fmtstr_ut = "%(levelname)s %(name)s %(funcName)s -- %(message)s"
 fmtstr = "%(asctime)s %(levelname)s %(process)s %(thread)s %(name)s %(funcName)s %(lineno)d -- %(message)s"
 
 
-class PersistentTool:
-    """
-    Encapsulates all the states needed to run persistent tooling in the background.
-    The ToolMeister class uses one PersistentTool object per persistent tool.
-    """
-
-    def __init__(self, name, tool_opts, logger):
-        self.name = name
-        self.tool_opts = tool_opts.split(" ")
-        self.logger = logger
-        self.process = None
-        # Looking for required "--inst" option, reformatting appropriately if
-        # found.
-        for opt in self.tool_opts:
-            if opt.startswith("--inst="):
-                if opt[-1] == "\n":
-                    self.install_path = opt[7:-1]
-                else:
-                    self.install_path = opt[7:]
-                self.logger.debug(
-                    "install path for tool %s, %s", name, self.install_path
-                )
-                break
-        else:
-            self.install_path = None
-            self.logger.debug("missing install path for tool %s", name)
-
-    def start(self):
-        if self.install_path is None:
-            self.logger.error(
-                "No install path properly given as persistent tool option, see /opt/pbench-agent/nodexporter --help"
-            )
-            return
-
-        if self.name == "node-exporter":
-            self.logger.debug(self.install_path)
-
-            if not os.path.isfile(self.install_path + "/node_exporter"):
-                self.logger.info(
-                    self.install_path + "/node_exporter" + " does not exist"
-                )
-                return 0
-
-            args = [self.install_path + "/node_exporter"]
-            process = subprocess.Popen(
-                args, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
-            )
-        elif self.name == "dcgm":
-            os.environ["PYTHONPATH"] = (
-                self.install_path
-                + "/bindings:"
-                + self.install_path
-                + "/bindings/common"
-            )
-
-            script_path = self.install_path + "/samples/scripts/dcgm_prometheus.py"
-            if not os.path.isfile(script_path):
-                self.logger.info(script_path + " does not exist")
-                return 0
-
-            args = [f"python2 {script_path}"]
-            process = subprocess.Popen(
-                args, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, shell=True
-            )
-        else:
-            self.logger.error("Invalid persistent tool name")
-            return 0
-
-        self.process = process
-        self.logger.info("Started persistent tool %s, %r", self.name, args)
-        return 1
-
-    def stop(self):
-        if self.process is None:
-            self.logger.error("Nothing to terminate")
-            return 0
-
-        self.process.terminate()
-        self.process.wait()
-        self.logger.info("Stopped persistent tool %s", self.name)
-        return 1
-
-
 class ToolException(Exception):
     """Exception class for all exceptions raised by the Tool class object methods.
     """
@@ -174,11 +91,20 @@ class Tool:
     "tool-scripts/base-tool" bash script.
     """
 
-    def __init__(self, name, group, tool_opts, pbench_install_dir, tool_dir, logger):
+    def __init__(
+        self,
+        name,
+        tool_opts,
+        group=None,
+        pbench_install_dir=None,
+        tool_dir=None,
+        logger=None,
+    ):
+        assert logger is not None, "Logic bomb!  no logger provided!"
         self.logger = logger
         self.name = name
-        self.group = group
         self.tool_opts = tool_opts
+        self.group = group
         self.pbench_install_dir = pbench_install_dir
         self.tool_dir = tool_dir
         self.start_process = None
@@ -294,6 +220,143 @@ class Tool:
             raise ToolException(f"Tool({self.name}) wait not called after 'stop'")
 
 
+class PersistentTool(Tool):
+    """PersistentTool - Encapsulates all the states needed to run persistent
+    tooling in the background.  A PersistentTool extends the base Tool class
+    with some simple modifications for stopping the tool without the need for
+    an external stop script.
+
+    Each persistent tool extends this intermediate "base" class with its
+    own particular behaviors.
+    """
+
+    def __init__(self, name, tool_opts, logger=None, **kwargs):
+        super().__init__(name, tool_opts, logger=logger, **kwargs)
+        self.args = None
+        self.process = None
+
+    def start(self):
+        assert (
+            self.process is not None
+        ), "Logic bomb!  persistent tool not properly sub-classed"
+        self.logger.info("Started persistent tool %s, %r", self.name, self.args)
+
+    def stop(self):
+        if self.process is None:
+            self.logger.error("Nothing to terminate")
+            return 0
+
+        self.process.terminate()
+        self.process.wait()
+        self.logger.info("Stopped persistent tool %s", self.name)
+        self.process = None
+
+    def wait(self):
+        assert (
+            self.process is None
+        ), f"Tool({self.name}) has an unexpected process running"
+
+
+class DcgmTool(PersistentTool):
+    """DcgmTool - provide specific persistent tool behaviors for the "dcgm"
+    tool.
+
+    In particular, the dcgm tool requires the "--inst" option, requires the
+    PYTHONPATH environment variable be set properly, and must use a python2
+    environment.
+    """
+
+    def __init__(self, name, tool_opts, logger=None, **kwargs):
+        super().__init__(name, tool_opts, logger=logger, **kwargs)
+        # Looking for required "--inst" option, reformatting appropriately if
+        # found.
+        tool_opts_l = self.tool_opts.split(" ")
+        for opt in tool_opts_l:
+            if opt.startswith("--inst="):
+                if opt[-1] == "\n":
+                    install_path = opt[7:-1]
+                else:
+                    install_path = opt[7:]
+                self.install_path = Path(install_path)
+                self.logger.debug(
+                    "install path for tool %s, %s", name, self.install_path
+                )
+                break
+        else:
+            self.install_path = None
+            self.logger.debug("missing install path")
+        if self.install_path is None:
+            self.script_path = None
+            self.args = None
+            self.env = None
+        else:
+            self.script_path = (
+                self.install_path / "samples" / "scripts" / "dcgm_prometheus.py"
+            )
+            if not self.script_path.exists():
+                self.logger.error("missing script path, %s", self.script_path)
+                self.args = None
+                self.env = None
+            else:
+                self.args = ["python2", f"{self.script_path}"]
+                self.env = os.environ.copy()
+                prev_path = os.environ.get("PYTHONPATH", "")
+                if prev_path:
+                    prev_path = f":{prev_path}"
+                self.env[
+                    "PYTHONPATH"
+                ] = "{self.install_path}/bindings:{self.install_path}/bindings/common{prev_path}"
+
+    def install(self):
+        if self.install_path is None:
+            return (1, "dcgm tool --inst argument missing")
+        elif self.args is None:
+            return (1, f"dcgm tool path, '{self.script_path}', not found")
+        return (0, "dcgm tool properly installed")
+
+    def start(self):
+        assert self.args is not None, "Logic bomb!  dcgm install had failed!"
+        self.logger.debug(self.args[1])
+        self.process = subprocess.Popen(
+            self.args,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+            env=self.env,
+            shell=True,
+        )
+        super().start()
+
+
+class NodeExporterTool(PersistentTool):
+    """NodeExporterTool - provide specifics for running the "node-exporter"
+    tool.
+
+    The only particular behavior is that we find the proper "node_exporter"
+    executable in our PATH.
+    """
+
+    def __init__(self, name, tool_opts, logger=None, **kwargs):
+        super().__init__(name, tool_opts, logger=logger, **kwargs)
+        executable = find_executable("node_exporter")
+        if executable is None:
+            self.args = None
+        else:
+            self.args = [executable]
+
+    def install(self):
+        if self.args is None:
+            return (1, "node_exporter tool not found")
+        return (0, "node_exporter tool properly installed")
+
+    def start(self):
+        assert self.args is not None, "Logic bomb!  node-exporter install had failed!"
+        self.logger.debug(self.args[0])
+        self.process = subprocess.Popen(
+            self.args, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
+        )
+        super().start()
+
+
 class Terminate(Exception):
     """Simple exception to be raised when the Tool Meister main loop should exit
     gracefully.
@@ -404,6 +467,11 @@ class ToolMeister:
 
     _valid_states = frozenset(["startup", "idle", "running", "shutdown"])
     _message_keys = frozenset(["action", "args", "directory", "group"])
+    # Most tools we have today are "transient" tools, and are handled by external
+    # scripts.  Our two persistent tools are handled in the code directly.
+    #
+    # FIXME - we should eventually allow them to be loaded externally.
+    _tool_name_class_mappings = {"dcgm": DcgmTool, "node-exporter": NodeExporterTool}
 
     def __init__(
         self,
@@ -441,7 +509,11 @@ class ToolMeister:
         self._running_tools = dict()
         # No persistent tools at first
         self._persistent_tools = dict()
-        self.persist_tools = self._tool_metadata.getPersistentTools()
+        self.persistent_tool_names = self._tool_metadata.getPersistentTools()
+        for name in self.persistent_tool_names:
+            assert (
+                name in self._tool_name_class_mappings
+            ), f"Logic bomb! {name} not in tool name class mappings"
         # We start in the "startup" state, waiting for first "init" action.
         self.state = "startup"
 
@@ -494,23 +566,30 @@ class ToolMeister:
 
         tool_installs = {}
         for name, tool_opts in sorted(self._tools.items()):
-            if name in self.persist_tools:
-                # Persistent tools do not have install checks
-                continue
             try:
-                tool = Tool(
+                tklass = self._tool_name_class_mappings[name]
+            except KeyError:
+                tklass = Tool
+            try:
+                tool = tklass(
                     name,
-                    self._group,
                     tool_opts,
-                    self.pbench_install_dir,
-                    self._tool_dir,
-                    self.logger,
+                    group=self._group,
+                    pbench_install_dir=self.pbench_install_dir,
+                    tool_dir=self._tool_dir,
+                    logger=self.logger,
                 )
                 # FIXME - consider running these in parallel.
                 tool_installs[name] = tool.install()
             except Exception:
                 self.logger.exception("Failed to run tool %s install check", name)
                 tool_installs[name] = (-42, "internal-error")
+        self._failed_tools = {}
+        for name, res in tool_installs.items():
+            if res[0] != 0:
+                self.logger.debug("Recording failed tool, %s", name)
+                self._failed_tools[name] = self._tools[name]
+                del self._tools[name]
 
         started_msg = dict(
             hostname=self._hostname,
@@ -653,23 +732,24 @@ class ToolMeister:
         """
         failures = 0
         tool_cnt = 0
-        for name, tool_opts in self._tools.items():
-            if name not in self.persist_tools:
-                continue
-            tool_cnt += 1
+        for name, tool_opts in sorted(self._tools.items()):
             try:
-                persistent_tool = PersistentTool(name, tool_opts, self.logger)
-                persistent_tool.start()
-
-                self.logger.debug("NAME: " + name + "  TOOL OPTS: " + tool_opts)
-            except Exception:
-                self.logger.exception(
-                    "Failed to init PersistentTool %s running in background", name
-                )
-                failures += 1
-                continue
+                tklass = self._tool_name_class_mappings[name]
+            except KeyError:
+                pass
             else:
-                self._persistent_tools[name] = persistent_tool
+                tool_cnt += 1
+                try:
+                    persistent_tool = tklass(name, tool_opts, logger=self.logger)
+                    persistent_tool.start()
+                except Exception:
+                    self.logger.exception(
+                        "Failed to init PersistentTool %s running in background", name
+                    )
+                    failures += 1
+                else:
+                    self._persistent_tools[name] = persistent_tool
+                    self.logger.debug("NAME: " + name + "  TOOL OPTS: " + tool_opts)
         if failures > 0:
             msg = f"{failures} of {tool_cnt} persistent tools failed to start"
             self._send_client_status(msg)
@@ -757,17 +837,17 @@ class ToolMeister:
         failures = 0
         tool_cnt = 0
         for name, tool_opts in sorted(self._tools.items()):
-            if name in self.persist_tools:
+            if name in self.persistent_tool_names:
                 continue
             tool_cnt += 1
             try:
                 tool = Tool(
                     name,
-                    self._group,
                     tool_opts,
-                    self.pbench_install_dir,
-                    self._tool_dir,
-                    self.logger,
+                    group=self._group,
+                    pbench_install_dir=self.pbench_install_dir,
+                    tool_dir=self._tool_dir,
+                    logger=self.logger,
                 )
                 tool.start()
             except Exception:
@@ -794,23 +874,20 @@ class ToolMeister:
         """
         failures = 0
         for name in sorted(self._tools.keys()):
-            if name in self.persist_tools:
-                continue
             try:
                 tool = self._running_tools[name]
             except KeyError:
-                self.logger.error(
-                    "INTERNAL ERROR - tool %s not found in list of running tools", name
-                )
-                failures += 1
-                continue
-            try:
-                tool.wait()
-            except Exception:
-                self.logger.exception(
-                    "Failed to wait for tool %s to stop running in background", name
-                )
-                failures += 1
+                assert (
+                    name in self.persistent_tool_names
+                ), f"tool {name} not found in list of persistent tools"
+            else:
+                try:
+                    tool.wait()
+                except Exception:
+                    self.logger.exception(
+                        "Failed to wait for tool %s to stop running in background", name
+                    )
+                    failures += 1
         return failures
 
     def stop_tools(self, data):
@@ -836,39 +913,30 @@ class ToolMeister:
         failures = 0
         tool_cnt = 0
         for name in sorted(self._tools.keys()):
-            if name in self.persist_tools:
-                continue
             tool_cnt += 1
             try:
                 tool = self._running_tools[name]
             except KeyError:
-                self.logger.error(
-                    "INTERNAL ERROR - tool %s not found in list of running tools", name
-                )
-                failures += 1
-                continue
-            try:
-                tool.stop()
-            except Exception:
-                self.logger.exception(
-                    "Failed to stop tool %s running in background", name
-                )
-                failures += 1
+                assert (
+                    name in self.persistent_tool_names
+                ), f"tool {name} not found in list of persistent tools"
+            else:
+                try:
+                    tool.stop()
+                except Exception:
+                    self.logger.exception(
+                        "Failed to stop tool %s running in background", name
+                    )
+                    failures += 1
         failures += self._wait_for_tools()
 
         # Clean up the running tools data structure explicitly ahead of
         # potentially receiving another start tools.
         for name in sorted(self._tools.keys()):
-            if name in self.persist_tools:
-                continue
             try:
                 del self._running_tools[name]
             except KeyError:
-                self.logger.error(
-                    "INTERNAL ERROR - tool %s not found in list of running tools", name,
-                )
-                failures += 1
-                continue
+                pass
 
         # Remember this tool directory so that we can send its data when
         # requested.
@@ -1067,7 +1135,8 @@ class ToolMeister:
             self._send_client_status(msg)
             return 1
 
-        if len(set(self._tools.keys()) - set(self.persist_tools)) == 0:
+        if len(set(self._tools.keys()) - set(self.persistent_tool_names)) == 0:
+            # We only have persistent tools, nothing to send.
             self._send_client_status("success")
             return 0
 
@@ -1124,25 +1193,19 @@ class ToolMeister:
         failures = 0
         tool_cnt = 0
         for name in self._tools.keys():
-            if name not in self.persist_tools:
-                continue
-            tool_cnt += 1
             try:
                 persistent_tool = self._persistent_tools[name]
             except KeyError:
-                self.logger.error(
-                    "INTERNAL ERROR - tool %s not in list of persistent tools", name,
-                )
-                failures += 1
-                continue
-            try:
-                persistent_tool.stop()
-            except Exception:
-                self.logger.exception(
-                    "Failed to stop persistent tool %s running in background", name
-                )
-                failures += 1
-
+                pass
+            else:
+                tool_cnt += 1
+                try:
+                    persistent_tool.stop()
+                except Exception:
+                    self.logger.exception(
+                        "Failed to stop persistent tool %s running in background", name
+                    )
+                    failures += 1
         if failures > 0:
             msg = f"{failures} of {tool_cnt} failed stopping persistent tools"
             self._send_client_status(msg)

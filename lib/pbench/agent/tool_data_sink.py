@@ -220,6 +220,10 @@ class PromCollector(BaseCollector):
     """Persistent tool data collector for tools compatible with Prometheus"""
 
     def __init__(self, *args, **kwargs):
+        self.prometheus_path = find_executable("prometheus")
+        if self.prometheus_path is None:
+            raise Exception("External 'prometheus' executable not found")
+
         super().__init__(*args, **kwargs)
         self.volume = self.tool_group_dir / "prometheus"
         self.tool_context = []
@@ -239,31 +243,19 @@ class PromCollector(BaseCollector):
             config.write(yml)
 
         with open("prom.log", "w") as prom_logs:
-            args = ["podman", "pull", "quay.io/prometheus/prometheus"]
-            try:
-                prom_pull = subprocess.Popen(args, stdout=prom_logs, stderr=prom_logs)
-                prom_pull.wait()
-            except Exception as exc:
-                self.logger.error("Podman pull process failed: '%s'", exc)
-                return 0
-
             try:
                 os.mkdir(self.volume)
-                os.chmod(self.volume, 0o777)
+                os.chmod(self.volume, 0o775)
             except Exception as exc:
                 self.logger.error("Volume creation failed: '%s'", exc)
                 return 0
 
             args = [
-                "podman",
-                "run",
-                "-p",
-                "9090:9090",
-                "-v",
-                f"{self.volume}:/prometheus:Z",
-                "-v",
-                f"{self.benchmark_run_dir}/tm/prometheus.yml:/etc/prometheus/prometheus.yml:Z",
-                "quay.io/prometheus/prometheus",
+                self.prometheus_path,
+                f"--config.file={self.benchmark_run_dir}/tm/prometheus.yml",
+                f"--storage.tsdb.path={self.volume}",
+                "--web.console.libraries=/usr/share/prometheus/console_libraries",
+                "--web.console.templates=/usr/share/prometheus/consoles",
             ]
             try:
                 self.run = subprocess.Popen(args, stdout=prom_logs, stderr=prom_logs)
@@ -551,8 +543,15 @@ class ToolDataSink(Bottle):
             noop_tools = []
             persistent_tools = []
             transient_tools = []
+            failed_tools = []
             for tool_name in tools.keys():
-                if tool_name in persistent_tools_l:
+                try:
+                    code, msg = tm["installs"][tool_name]
+                except KeyError:
+                    code, msg = 0, ""
+                if code != 0:
+                    failed_tools.append(tool_name)
+                elif tool_name in persistent_tools_l:
                     persistent_tools.append(tool_name)
                 elif tool_name in BaseCollector.allowed_tools:
                     noop_tools.append(tool_name)
@@ -565,6 +564,7 @@ class ToolDataSink(Bottle):
             tm["noop_tools"] = noop_tools
             tm["persistent_tools"] = persistent_tools
             tm["transient_tools"] = transient_tools
+            tm["failed_tools"] = failed_tools
 
             if tm["hostname"] == self.hostname:
                 # The "localhost" tool meister instance does not send data
@@ -843,7 +843,7 @@ class ToolDataSink(Bottle):
             if tm["posted"] is None:
                 continue
             if action == "send" and not tm["transient_tools"]:
-                # Ignore any Tool Meisters who do not have any transient
+                # Ignore any Tool Meisters which do not have any transient
                 # tools.
                 continue
             assert (
@@ -1348,12 +1348,6 @@ def main(argv):
     cp_path = find_executable("cp")
     if cp_path is None:
         logger.error("External 'cp' executable not found")
-        return 2
-
-    global podman_path
-    podman_path = find_executable("podman")
-    if podman_path is None:
-        logger.error("External 'podman' executable not found")
         return 2
 
     try:
