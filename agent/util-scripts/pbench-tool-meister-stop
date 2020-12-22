@@ -19,7 +19,7 @@ import time
 from argparse import ArgumentParser
 from pathlib import Path
 
-from pbench.agent.constants import redis_port, cli_tm_channel_prefix
+from pbench.agent.constants import redis_port as def_redis_port, cli_tm_channel_prefix
 from pbench.agent.tool_meister_client import Client
 from pbench.agent.utils import (
     cli_verify_sysinfo,
@@ -115,17 +115,35 @@ def main(_prog, cli_params):
         logger.exception("failed to fetch parameters from the environment")
         return 1
 
-    try:
-        redis_server_pid_file = (
-            benchmark_run_dir / "tm" / f"redis_{redis_port:d}.pid"
-        ).resolve(strict=True)
-    except FileNotFoundError:
-        # No Redis server, nothing to do.
-        return 0
+    if cli_params.redis_server is None:
+        # No Redis server was given, so look locally to see if we can find it.
+        # If no Redis server locally, we're done.
+        try:
+            redis_server_pid_file = (
+                benchmark_run_dir / "tm" / f"redis_{def_redis_port:d}.pid"
+            ).resolve(strict=True)
+        except FileNotFoundError:
+            # No Redis server, nothing to do.
+            return 0
+        else:
+            redis_host = "localhost"
+            redis_port = def_redis_port
+    else:
+        parts = cli_params.redis_server.split(":", 1)
+        if len(parts) != 2:
+            logger.error("Bad Redis server specified, '%s'", cli_params.redis_server)
+            return 1
+        try:
+            redis_port = int(parts[1])
+        except Exception:
+            logger.error("Bad Redis port specified, '%s'", cli_params.redis_server)
+            return 1
+        else:
+            redis_host = parts[0]
 
     # The Redis server is always running on the local host with the CLI.
     with Client(
-        redis_host="localhost",
+        redis_host=redis_host,
         redis_port=redis_port,
         channel_prefix=cli_tm_channel_prefix,
         logger=logger,
@@ -161,7 +179,14 @@ def main(_prog, cli_params):
         # Meisters, indicating if this termination is due to an interruption.
         ret_val = client.terminate(group, interrupt)
 
-    if ret_val == 0:
+    if ret_val == 0 and cli_params.redis_server is None:
+        # The client operations were successful (FIXME, we should do this on
+        # failure, too!), and we were not given an explicit Redis server, so
+        # the previous pbench-tool-meister-start must have set up the local
+        # Tool Data Sink, Tool Meister (if registered), and the Redis server.
+        # So it is our responsibility to make sure these processes shut down
+        # correctly.
+        #
         # The assumption/assertion here is that the tool meister "stop" command is
         # run on the same node as the Tool Data Sink. So we want to make sure
         # anything "local" to this stop command is shut down gracefully before we
@@ -239,6 +264,15 @@ if __name__ == "__main__":
         "--interrupt",
         action="store_true",
         help="Whether or not the stop operation is in response to an interrupt.",
+    )
+    parser.add_argument(
+        "--redis-server",
+        dest="redis_server",
+        default=None,
+        help=(
+            "Use an existing Redis server specified by <hostname>:<port>;"
+            " implies an existing Tool Data Sink and Tool Meisters as well."
+        ),
     )
     parser.add_argument(
         "tool_group", help="The tool group of items being run in the Tool Meisters."

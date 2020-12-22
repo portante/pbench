@@ -29,11 +29,11 @@ from pathlib import Path
 from threading import Thread, Lock, Condition
 from wsgiref.simple_server import WSGIRequestHandler, make_server
 
-import daemon
 import pidfile
 import redis
 
 from bottle import Bottle, ServerAdapter, request, abort
+from daemon import DaemonContext
 
 from pbench.agent.constants import (
     tds_port,
@@ -44,9 +44,14 @@ from pbench.agent.constants import (
     tm_channel_suffix_to_logging,
     tm_channel_suffix_to_tms,
 )
-from pbench.agent.redis import RedisChannelSubscriber
+from pbench.agent.redis import RedisChannelSubscriber, wait_for_conn_and_key
 from pbench.agent.toolmetadata import ToolMetadata
 from pbench.agent.utils import collect_local_info
+
+
+# Logging format string for unit tests
+fmtstr_ut = "%(levelname)s %(name)s %(funcName)s -- %(message)s"
+fmtstr = "%(asctime)s %(levelname)s %(process)s %(thread)s %(name)s %(funcName)s %(lineno)d -- %(message)s"
 
 
 # Read in 64 KB chunks off the wire for HTTP PUT requests.
@@ -54,10 +59,6 @@ _BUFFER_SIZE = 65536
 
 # Maximum size of the tar ball for collected tool data.
 _MAX_TOOL_DATA_SIZE = 2 ** 30
-
-# Executable path of the tar program.
-tar_path = None
-cp_path = None
 
 
 def _now(when):
@@ -140,6 +141,14 @@ class DataSinkWsgiServer(ServerAdapter):
         self._server.shutdown()
 
 
+class ToolDataSinkError(Exception):
+    """ToolDataSinkError - generic exception class for Tool Data Sink related
+    exceptions.
+    """
+
+    pass
+
+
 class BaseCollector:
     """Abstract class for persistent tool data collectors"""
 
@@ -154,13 +163,16 @@ class BaseCollector:
         logger,
         tool_metadata,
     ):
+        assert (
+            pbench_bin / "templates"
+        ).is_dir(), f"Logic bomb! {pbench_bin}/templates does not exist as a directory"
         self.run = None
         self.benchmark_run_dir = benchmark_run_dir
         self.tool_group = tool_group
         self.host_tools_dict = host_tools_dict
         self.logger = logger
         self.tool_metadata = tool_metadata
-        self.tool_group_dir = self.benchmark_run_dir / f"tools-{self.tool_group}"
+        self.tool_group_dir = self.benchmark_run_dir.local / f"tools-{self.tool_group}"
         self.template_dir = Environment(
             autoescape=False,
             loader=FileSystemLoader(pbench_bin / "templates"),
@@ -222,41 +234,43 @@ class PromCollector(BaseCollector):
     def __init__(self, *args, **kwargs):
         self.prometheus_path = find_executable("prometheus")
         if self.prometheus_path is None:
-            raise Exception("External 'prometheus' executable not found")
+            raise ToolDataSinkError("External 'prometheus' executable not found")
 
         super().__init__(*args, **kwargs)
         self.volume = self.tool_group_dir / "prometheus"
         self.tool_context = []
-        for host, tools in self.host_tools_dict.items():
-            for tool in tools:
+        for host, tools in sorted(self.host_tools_dict.items()):
+            for tool in sorted(tools):
                 port = self.tool_metadata.getProperties(tool)["port"]
                 self.tool_context.append(
                     dict(hostname=f"{host}_{tool}", hostport=f"{host}:{port}")
                 )
         if not self.tool_context:
-            raise Exception("Expected prometheus persistent tool context not found")
+            raise ToolDataSinkError(
+                "Expected prometheus persistent tool context not found"
+            )
 
     def launch(self):
         yml = self.render_from_template("prometheus.yml", dict(tools=self.tool_context))
         assert yml is not None, f"Logic bomb!  {self.tool_context!r}"
-        with open("prometheus.yml", "w") as config:
+        tm_dir = self.benchmark_run_dir.local / "tm"
+        with (tm_dir / "prometheus.yml").open("w") as config:
             config.write(yml)
+        try:
+            os.mkdir(self.volume)
+            os.chmod(self.volume, 0o775)
+        except Exception as exc:
+            self.logger.error("Volume creation failed: '%s'", exc)
+            return 0
 
-        with open("prom.log", "w") as prom_logs:
-            try:
-                os.mkdir(self.volume)
-                os.chmod(self.volume, 0o775)
-            except Exception as exc:
-                self.logger.error("Volume creation failed: '%s'", exc)
-                return 0
-
-            args = [
-                self.prometheus_path,
-                f"--config.file={self.benchmark_run_dir}/tm/prometheus.yml",
-                f"--storage.tsdb.path={self.volume}",
-                "--web.console.libraries=/usr/share/prometheus/console_libraries",
-                "--web.console.templates=/usr/share/prometheus/consoles",
-            ]
+        args = [
+            self.prometheus_path,
+            f"--config.file={self.benchmark_run_dir.local}/tm/prometheus.yml",
+            f"--storage.tsdb.path={self.volume}",
+            "--web.console.libraries=/usr/share/prometheus/console_libraries",
+            "--web.console.templates=/usr/share/prometheus/consoles",
+        ]
+        with (tm_dir / "prom.log").open("w") as prom_logs:
             try:
                 self.run = subprocess.Popen(args, stdout=prom_logs, stderr=prom_logs)
             except Exception as exc:
@@ -286,6 +300,116 @@ class PromCollector(BaseCollector):
         return 1
 
 
+class BenchmarkRunDir:
+    """BenchmarkRunDir - helper class for handling the benchmark_run_dir
+    directory Redis parameter vs the actual "local" benchmark run directory.
+
+    It is a requirement of the Tool Meister sub-system that the ${pbench_run}
+    directory is always a prefix of the ${benchmark_run_dir}.
+
+    When the pbench CLI starts the Tool Data Sink directly, the local
+    benchmark run directory is the same as the value of the benchmark_run_dir
+    parameter.
+
+    But when the Tool Data Sink runs in a container, the local volume name for
+    the benchmark run directory might be different from the parameter value.
+    Typically, the container is constructed with the default pbench
+    installation of where the ${pbench_run} directory is
+    "/var/lib/pbench-agent".
+
+    The entity responsible for starting the Tool Data Sink container typically
+    mounts a different directory for /var/lib/pbench-agent via 'podman run
+    --volume /srv/data/pbench-run-dir:/var/lib/pbench-agent:Z'.  This leads to
+    a conflict where the external ${pbench_run} path is different the internal
+    to the container ${pbench_run} path.  To resolve this, the entity which
+    creates the external pbench run directory creates a ".path" file in that
+    directory containing the full "external" path to the pbench run
+    directory. The Tool Data Sink uses that path to validate that external
+    benchmark_run_dir parameter values are valid.
+
+    This class implements the mechanism that allows the Tool Data Sink code to
+    handle that seemlessly.
+    """
+
+    def __init__(self, ext_benchmark_run_dir, int_pbench_run):
+        self._ext_benchmark_run_dir = Path(ext_benchmark_run_dir)
+        self._ext_pbench_run = self._ext_benchmark_run_dir.parent
+        self._int_pbench_run = Path(int_pbench_run)
+
+        # The Tool Data Sink could be running in a container. If so, then
+        # it'll be using the default benchmark run directory.  If the
+        # benchmark_run_dir parameter is valid, there will be a file
+        # called ".path" in the default benchmark run directory which will
+        # match.
+        #
+        # E.g.:
+        #  $ benchmark_run_dir = /home/<USER>/run-dir
+        #  $ cat /home/<USER>/run-dir/.path
+        #  /home/<USER>/run-dir
+        #  $ podman run --volume /home/<USER>/run-dir:/var/lib/pbench-agent\
+        #    pbench-agent-tool-data-sink bash
+        #  [ abcdefg /]$ cat /var/lib/pbench-agent/.path
+        #  /home/<USER>/run-dir
+        try:
+            benchmark_run_dir_lcl = self._ext_benchmark_run_dir.resolve(strict=True)
+        except Exception:
+            # Might be in a container; let's first construct the
+            # internal-to-the-container benchmark run directory.
+            benchmark_run_dir_lcl = (
+                self._int_pbench_run / self._ext_benchmark_run_dir.name
+            )
+            try:
+                dot_path = (self._int_pbench_run / ".path").read_text().strip()
+            except Exception as exc:
+                # Failed to read ".path" contents, give up.
+                raise ToolDataSinkError(
+                    f"Run directory parameter, '{ext_benchmark_run_dir}', must"
+                    f" be an existing directory ('{self._ext_pbench_run}/"
+                    f".path' not found, '{exc}').",
+                )
+            else:
+                if dot_path != str(self._ext_pbench_run):
+                    raise ToolDataSinkError(
+                        f"Run directory parameter, '{ext_benchmark_run_dir}',"
+                        " must be an existing directory (.path contents"
+                        f" mismatch, .path='{dot_path}' !="
+                        f" '{self._ext_pbench_run}').",
+                    )
+        else:
+            # We can access the benchmark_run_dir directly, no need to
+            # consider contents of ".path" file.
+            pass
+        if not benchmark_run_dir_lcl.is_dir():
+            raise ToolDataSinkError(
+                f"Run directory parameter, '{ext_benchmark_run_dir}', must be"
+                " a real directory.",
+            )
+        self.local = benchmark_run_dir_lcl
+
+    def __str__(self):
+        """__str__ - the string representation of a BenchmarkRunDir object is
+        the original external benchmark run directory string.
+        """
+        return str(self._ext_benchmark_run_dir)
+
+    def validate(self, directory):
+        """validate - check that an external directory has a prefix of the external
+        benchmark run directory.
+        """
+        directory_p = Path(directory)
+        try:
+            # Check that "directory" has a prefix of
+            rel_path = directory_p.relative_to(self._ext_benchmark_run_dir)
+        except ValueError:
+            return "not-a-prefix", None
+        local_dir = self.local / rel_path
+        if not local_dir.is_dir():
+            # The internal benchmark run directory does not have the same
+            # sub-directory hierarchy.
+            return "does-not-exist", None
+        return None, local_dir
+
+
 class ToolDataSink(Bottle):
     """ToolDataSink - sub-class of Bottle representing state for tracking data
     sent from tool meisters via an HTTP PUT method.
@@ -294,18 +418,39 @@ class ToolDataSink(Bottle):
     # The list of actions where we expect Tool Meisters to send data to us.
     _data_actions = frozenset(("send", "sysinfo"))
 
+    @staticmethod
+    def fetch_params(params, pbench_run):
+        try:
+            _benchmark_run_dir = params["benchmark_run_dir"]
+            bind_hostname = params["bind_hostname"]
+            channel_prefix = params["channel_prefix"]
+            tool_group = params["group"]
+            tool_metadata = ToolMetadata.tool_md_from_dict(params["tool_metadata"])
+            tool_trigger = params["tool_trigger"]
+            tools = params["tools"]
+        except KeyError as exc:
+            raise ToolDataSinkError(f"Invalid parameter block, missing key {exc}")
+        else:
+            benchmark_run_dir = BenchmarkRunDir(_benchmark_run_dir, pbench_run)
+            return (
+                benchmark_run_dir,
+                bind_hostname,
+                channel_prefix,
+                tool_group,
+                tool_metadata,
+                tool_trigger,
+                tools,
+            )
+
     def __init__(
         self,
         pbench_bin,
+        pbench_run,
         hostname,
-        bind_hostname,
+        tar_path,
+        cp_path,
         redis_server,
-        channel_prefix,
-        benchmark_run_dir,
-        tool_group,
-        tool_trigger,
-        tools,
-        tool_metadata,
+        params,
         optional_md,
         logger,
     ):
@@ -317,14 +462,19 @@ class ToolDataSink(Bottle):
         # Save external state
         self.pbench_bin = pbench_bin
         self.hostname = hostname
-        self.bind_hostname = bind_hostname
+        self.tar_path = tar_path
+        self.cp_path = cp_path
         self.redis_server = redis_server
-        self.channel_prefix = channel_prefix
-        self.benchmark_run_dir = benchmark_run_dir
-        self.tool_group = tool_group
-        self.tool_trigger = tool_trigger
-        self.tools = tools
-        self.tool_metadata = tool_metadata
+        ret_val = self.fetch_params(params, pbench_run)
+        (
+            self.benchmark_run_dir,
+            self.bind_hostname,
+            self.channel_prefix,
+            self.tool_group,
+            self.tool_metadata,
+            self.tool_trigger,
+            self.tools,
+        ) = ret_val
         self.optional_md = optional_md
         self.logger = logger
         # Initialize internal state
@@ -440,7 +590,7 @@ class ToolDataSink(Bottle):
         # logs from remote Tool Meisters.
         logger = logging.getLogger("tm_log_capture_thread")
         logger.setLevel(logging.WARNING)
-        tm_log_file = self.benchmark_run_dir / "tm" / "tm.logs"
+        tm_log_file = self.benchmark_run_dir.local / "tm" / "tm.logs"
         with tm_log_file.open("w") as fp:
             try:
                 for log_msg in self._to_logging_chan.fetch_message(logger):
@@ -586,7 +736,7 @@ class ToolDataSink(Bottle):
         home = os.environ.get("HOME", "")
         if home:
             src = str(Path(home) / ".ssh" / "config")
-            dst = str(self.benchmark_run_dir / "ssh.config")
+            dst = str(self.benchmark_run_dir.local / "ssh.config")
             try:
                 shutil.copyfile(src, dst)
             except FileNotFoundError:
@@ -596,7 +746,7 @@ class ToolDataSink(Bottle):
         # cp -L  /etc/ssh/ssh_config   ${dir}/ > /dev/null 2>&1
         etc_ssh = Path("/etc") / "ssh"
         src = str(etc_ssh / "ssh_config")
-        dst = str(self.benchmark_run_dir / "ssh_config")
+        dst = str(self.benchmark_run_dir.local / "ssh_config")
         try:
             shutil.copyfile(src, dst)
         except FileNotFoundError:
@@ -629,13 +779,18 @@ class ToolDataSink(Bottle):
         #
         # cp -rL /etc/ssh/ssh_config.d ${dir}/ > /dev/null 2>&1
         subprocess.run(
-            [cp_path, "-rL", "/etc/ssh/ssh_config.d", f"{self.benchmark_run_dir}/"],
+            [
+                self.cp_path,
+                "-rL",
+                "/etc/ssh/ssh_config.d",
+                f"{self.benchmark_run_dir.local}/",
+            ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
 
-        mdlog_name = self.benchmark_run_dir / "metadata.log"
+        mdlog_name = self.benchmark_run_dir.local / "metadata.log"
         mdlog = ConfigParser()
         try:
             with mdlog_name.open("r") as fp:
@@ -654,7 +809,7 @@ class ToolDataSink(Bottle):
         # Users have a funny way of adding '%' characters to the run
         # directory, so we have to be sure we handle "%" characters in the
         # directory name metadata properly.
-        mdlog.set(section, "name", self.benchmark_run_dir.name.replace("%", "%%"))
+        mdlog.set(section, "name", self.benchmark_run_dir.local.name.replace("%", "%%"))
         version, seqno, sha1, hostdata = collect_local_info(self.pbench_bin)
         rpm_version = f"v{version}-{seqno}g{sha1}"
         mdlog.set(section, "rpm-version", rpm_version)
@@ -781,7 +936,9 @@ class ToolDataSink(Bottle):
                 self._to_client_channel, json.dumps(started_msg, sort_keys=True)
             )
             if num_present == 0:
-                raise Exception("Tool Data Sink started by nobody is listening")
+                raise ToolDataSinkError(
+                    "Tool Data Sink started, but nobody is listening"
+                )
             self.logger.debug("published %s", self._to_client_channel)
 
             for data in self._from_client_chan.fetch_json(self.logger):
@@ -945,7 +1102,7 @@ class ToolDataSink(Bottle):
             # the caller wants to report that it is stopping all the Tool
             # Meisters due to an interruption (SIGINT or otherwise).
             #
-            mdlog_name = self.benchmark_run_dir / "metadata.log"
+            mdlog_name = self.benchmark_run_dir.local / "metadata.log"
             mdlog = ConfigParser()
             try:
                 with (mdlog_name).open("r") as fp:
@@ -964,7 +1121,7 @@ class ToolDataSink(Bottle):
                 if args["interrupt"]:
                     # args["interrupt"] == True ==> run / run_interrupted
                     mdlog.set(section, "run_interrupted", "true")
-                iterations = self.benchmark_run_dir / ".iterations"
+                iterations = self.benchmark_run_dir.local / ".iterations"
                 try:
                     iterations_val = iterations.read_text()
                 except FileNotFoundError:
@@ -989,26 +1146,28 @@ class ToolDataSink(Bottle):
             self._to_logging_chan.unsubscribe()
             return
 
-        directory = Path(directory_str)
-        if not directory.is_dir():
+        res, local_dir = self.benchmark_run_dir.validate(directory_str)
+        if res == "not-a-prefix":
             self.logger.error(
-                "action '%s' with non-existent directory, '%s'", action, directory,
-            )
-            self._send_client_status(action, "invalid directory")
-            return
-        try:
-            # Check that "directory" has a prefix of self.benchmark_run_dir
-            directory.relative_to(self.benchmark_run_dir)
-        except ValueError:
-            self.logger.error(
-                "action '%s' with invalid directory,"
-                " '%s' (not a sub-directory of '%s')",
+                "action '%s' with invalid directory, '%s' (not a sub-directory of '%s')",
                 action,
-                directory,
+                directory_str,
                 self.benchmark_run_dir,
             )
-            self._send_client_status(action, "directory not a prefix of run directory")
+            self._send_client_status(action, "directory not a sub-dir of run directory")
             return
+        elif res == "does-not-exist":
+            self.logger.error(
+                "action '%s' with invalid directory, '%s' (does not exist)",
+                action,
+                directory_str,
+            )
+            self._send_client_status(action, "directory does not exist")
+            return
+        else:
+            assert (
+                res is None and local_dir is not None
+            ), f"Logic bomb!  res = {res}, local_dir = {local_dir}"
 
         with self._lock:
             # Handle all actions underneath the lock for consistency.
@@ -1062,7 +1221,7 @@ class ToolDataSink(Bottle):
                 # the URL for the PUT method.
                 directory_bytes = directory_str.encode("utf-8")
                 self.data_ctx = hashlib.md5(directory_bytes).hexdigest()
-                self.directory = Path(directory_str)
+                self.directory = local_dir
 
                 # Forward to TMs
                 ret_val = self._forward_tms(data)
@@ -1264,7 +1423,7 @@ class ToolDataSink(Bottle):
                 # Invoke tar directly for efficiency.
                 with o_file.open("w") as ofp, e_file.open("w") as efp:
                     cp = subprocess.run(
-                        [tar_path, "-xf", host_data_tb_name],
+                        [self.tar_path, "-xf", host_data_tb_name],
                         cwd=target_dir,
                         stdin=None,
                         stdout=ofp,
@@ -1306,102 +1465,101 @@ class ToolDataSink(Bottle):
             abort(500, "INTERNAL ERROR")
 
 
-def main(argv):
-    _prog = Path(argv[0])
-    PROG = _prog.name
-    pbench_bin = _prog.parent.parent
+def get_logger(PROG, daemon=False):
+    """get_logger - contruct a logger for a Tool Meister instance.
 
+    If in the Unit Test environment, just log to console.
+    If in non-unit test environment:
+       If daemonized, log to syslog and log back to Redis.
+       If not daemonized, log to console AND log back to Redis
+    """
     logger = logging.getLogger(PROG)
-    fh = logging.FileHandler(f"{PROG}.log")
-    if os.environ.get("_PBENCH_UNIT_TESTS"):
-        fmtstr = "%(levelname)s %(name)s %(funcName)s -- %(message)s"
-    else:
-        fmtstr = (
-            "%(asctime)s %(levelname)s %(process)s %(thread)s"
-            " %(name)s %(funcName)s %(lineno)d -- %(message)s"
-        )
-    fhf = logging.Formatter(fmtstr)
-    fh.setFormatter(fhf)
     if os.environ.get("_PBENCH_TOOL_DATA_SINK_LOG_LEVEL") == "debug":
         log_level = logging.DEBUG
     else:
         log_level = logging.INFO
-    fh.setLevel(log_level)
-    logger.addHandler(fh)
     logger.setLevel(log_level)
 
-    try:
-        redis_host = argv[1]
-        redis_port = argv[2]
-        param_key = argv[3]
-    except IndexError as e:
-        logger.error("Invalid arguments: %s", e)
-        return 1
-
-    global tar_path
-    tar_path = find_executable("tar")
-    if tar_path is None:
-        logger.error("External 'tar' executable not found")
-        return 2
-
-    global cp_path
-    cp_path = find_executable("cp")
-    if cp_path is None:
-        logger.error("External 'cp' executable not found")
-        return 2
-
-    try:
-        redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
-    except Exception as e:
-        logger.error(
-            "Unable to connect to redis server, %s:%s: %s", redis_host, redis_port, e
-        )
-        return 3
-
-    try:
-        hostname = os.environ["_pbench_full_hostname"]
-    except KeyError:
-        logger.error("Unable to fetch _pbench_full_hostname environment variable")
-        return 4
-
-    try:
-        params_raw = redis_server.get(param_key)
-        if params_raw is None:
-            logger.error('Parameter key, "%s" does not exist.', param_key)
-            return 5
-        logger.debug("params_key (%s): %r", param_key, params_raw)
-        params_str = params_raw.decode("utf-8")
-        # The expected parameters for this "data-sink" is what "channel" to
-        # subscribe to for the tool meister operational life-cycle.  The
-        # data-sink listens for the actions, sysinfo | init | start | stop |
-        # send | end | terminate, exiting when "terminate" is received,
-        # marking the state in which data is captured.
-        #
-        # E.g. params = '{ "channel_prefix": "some-prefix",
-        #                  "benchmark_run_dir": "/loo/goo" }'
-        params = json.loads(params_str)
-        channel_prefix = params["channel_prefix"]
-        benchmark_run_dir = Path(params["benchmark_run_dir"]).resolve(strict=True)
-        bind_hostname = params["bind_hostname"]
-        tool_group = params["group"]
-        tool_trigger = params["tool_trigger"]
-        tools = params["tools"]
-        tool_metadata = ToolMetadata.tool_md_from_dict(params["tool_metadata"])
-    except Exception as ex:
-        logger.error("Unable to fetch and decode parameter key, %s: %s", param_key, ex)
-        return 6
+    unit_tests = bool(os.environ.get("_PBENCH_UNIT_TESTS"))
+    if unit_tests or not daemon:
+        sh = logging.StreamHandler()
     else:
-        if not benchmark_run_dir.is_dir():
-            logger.error(
-                "Run directory argument, %s, must be a real directory.",
-                benchmark_run_dir,
-            )
-            return 7
-        logger.debug("Tool Data Sink parameters check out, daemonizing ...")
-        redis_server.connection_pool.disconnect()
-        del redis_server
+        sh = logging.FileHandler(f"{PROG}.log")
+    sh.setLevel(log_level)
+    shf = logging.Formatter(fmtstr_ut if unit_tests else fmtstr)
+    sh.setFormatter(shf)
+    logger.addHandler(sh)
 
-    optional_md = params["optional_md"]
+    return logger
+
+
+def driver(
+    PROG,
+    redis_server,
+    pbench_bin,
+    pbench_run,
+    hostname,
+    tar_path,
+    cp_path,
+    param_key,
+    params,
+    optional_md,
+    logger=None,
+):
+    if logger is None:
+        logger = get_logger(PROG)
+
+    logger.debug("params_key (%s): %r", param_key, params)
+
+    try:
+        with ToolDataSink(
+            pbench_bin,
+            pbench_run,
+            hostname,
+            tar_path,
+            cp_path,
+            redis_server,
+            params,
+            optional_md,
+            logger,
+        ) as tds_app:
+            tds_app.execute()
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            logger.error(
+                "ERROR - tool data sink failed to start, %s:%s already in use",
+                params["bind_hostname"],
+                tds_port,
+            )
+            ret_val = 8
+        else:
+            logger.exception("ERROR - failed to start the tool data sink")
+            ret_val = 9
+    except Exception:
+        logger.exception("ERROR - failed to start the tool data sink")
+        ret_val = 10
+    else:
+        ret_val = 0
+    return ret_val
+
+
+def daemon(
+    PROG,
+    redis_server,
+    redis_host,
+    redis_port,
+    pbench_bin,
+    pbench_run,
+    hostname,
+    tar_path,
+    cp_path,
+    param_key,
+    params,
+    optional_md,
+):
+    # Disconnect any existing connections to the Redis server.
+    redis_server.connection_pool.disconnect()
+    del redis_server
 
     # Before we daemonize, flush any data written to stdout or stderr.
     sys.stderr.flush()
@@ -1411,56 +1569,160 @@ def main(argv):
     pfctx = pidfile.PIDFile(pidfile_name)
     with open(f"{PROG}.out", "w") as sofp, open(
         f"{PROG}.err", "w"
-    ) as sefp, daemon.DaemonContext(
+    ) as sefp, DaemonContext(
         stdout=sofp,
         stderr=sefp,
         working_directory=os.getcwd(),
         umask=0o022,
         pidfile=pfctx,
-        files_preserve=[fh.stream.fileno()],
     ):
+        logger = get_logger(PROG, daemon=True)
+
+        # We have to re-open the connection to the redis server now that we
+        # are "daemonized".
+        logger.debug("re-constructing Redis server object")
         try:
-            # We have to re-open the connection to the redis server now that we
-            # are "daemonized".
-            logger.debug("constructing Redis() object")
-            try:
-                redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
-            except Exception as e:
-                logger.error(
-                    "Unable to connect to redis server, %s:%s: %s",
-                    redis_host,
-                    redis_port,
-                    e,
-                )
-                return 8
-            else:
-                logger.debug("constructed Redis() object")
+            redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
+        except Exception as e:
+            logger.error(
+                "Unable to construct Redis server object, %s:%s: %s",
+                redis_host,
+                redis_port,
+                e,
+            )
+            return 7
+        else:
+            logger.debug("reconstructed Redis server object")
+        return driver(
+            PROG,
+            redis_server,
+            pbench_bin,
+            pbench_run,
+            hostname,
+            tar_path,
+            cp_path,
+            param_key,
+            params,
+            optional_md,
+            logger=logger,
+        )
 
-            with ToolDataSink(
-                pbench_bin,
-                hostname,
-                bind_hostname,
-                redis_server,
-                channel_prefix,
-                benchmark_run_dir,
-                tool_group,
-                tool_trigger,
-                tools,
-                tool_metadata,
-                optional_md,
-                logger,
-            ) as tds_app:
-                tds_app.execute()
-        except OSError as exc:
-            if exc.errno == errno.EADDRINUSE:
-                logger.error(
-                    "ERROR - tool data sink failed to start, %s:%s already in use",
-                    bind_hostname,
-                    tds_port,
-                )
-            else:
-                logger.exception("ERROR - failed to start the tool data sink")
-        except Exception:
-            logger.exception("ERROR - failed to start the tool data sink")
 
-    return 0
+def main(argv):
+    _prog = Path(argv[0])
+    PROG = _prog.name
+    # The Tool Data Sink executable is in:
+    #   ${pbench_bin}/util-scripts/tool-meister/pbench-tool-data-sink
+    # So .parent at each level is:
+    #   _prog       ${pbench_bin}/util-scripts/tool-meister/pbench-tool-data-sink
+    #     .parent   ${pbench_bin}/util-scripts/tool-meister
+    #     .parent   ${pbench_bin}/util-scripts
+    #     .parent   ${pbench_bin}
+    pbench_bin = _prog.parent.parent.parent
+
+    try:
+        redis_host = argv[1]
+        redis_port = argv[2]
+        param_key = argv[3]
+    except IndexError as e:
+        print(f"{PROG}: Invalid arguments: {e}", file=sys.stderr)
+        return 1
+    else:
+        if not redis_host or not redis_port or not param_key:
+            print(f"{PROG}: Invalid arguments: {argv!r}", file=sys.stderr)
+            return 1
+    try:
+        daemonize = argv[4]
+    except IndexError:
+        daemonize = "no"
+    else:
+        if not daemonize:
+            daemonize = "no"
+
+    tar_path = find_executable("tar")
+    if tar_path is None:
+        print("External 'tar' executable not found", file=sys.stderr)
+        return 2
+
+    cp_path = find_executable("cp")
+    if cp_path is None:
+        print("External 'cp' executable not found", file=sys.stderr)
+        return 2
+
+    try:
+        pbench_run = os.environ["pbench_run"]
+    except KeyError:
+        print(
+            "Unable to fetch pbench_run environment variable", file=sys.stderr,
+        )
+        return 3
+
+    try:
+        redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
+    except Exception as e:
+        print(
+            f"Unable to connect to redis server, {redis_host}:{redis_port}: {e}",
+            file=sys.stderr,
+        )
+        return 4
+
+    try:
+        hostname = os.environ["_pbench_full_hostname"]
+    except KeyError:
+        print(
+            "Unable to fetch _pbench_full_hostname environment variable",
+            file=sys.stderr,
+        )
+        return 5
+
+    try:
+        # Loop waiting for the key to show up.
+        params_str = wait_for_conn_and_key(redis_server, param_key)
+        # The expected parameters for this "data-sink" is what "channel" to
+        # subscribe to for the tool meister operational life-cycle.  The
+        # data-sink listens for the actions, sysinfo | init | start | stop |
+        # send | end | terminate, exiting when "terminate" is received,
+        # marking the state in which data is captured.
+        #
+        # E.g. params = '{ "channel_prefix": "some-prefix",
+        #                  "benchmark_run_dir": "/loo/goo" }'
+        params = json.loads(params_str)
+        ToolDataSink.fetch_params(params, pbench_run)
+    except Exception as ex:
+        print(
+            f"Unable to fetch and decode parameter key, {param_key}: {ex}",
+            file=sys.stderr,
+        )
+        return 6
+
+    optional_md = params["optional_md"]
+
+    if daemonize == "yes":
+        ret_val = daemon(
+            PROG,
+            redis_server,
+            redis_host,
+            redis_port,
+            pbench_bin,
+            pbench_run,
+            hostname,
+            tar_path,
+            cp_path,
+            param_key,
+            params,
+            optional_md,
+        )
+    else:
+        ret_val = driver(
+            PROG,
+            redis_server,
+            pbench_bin,
+            pbench_run,
+            hostname,
+            tar_path,
+            cp_path,
+            param_key,
+            params,
+            optional_md,
+        )
+    return ret_val

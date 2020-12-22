@@ -41,7 +41,12 @@ _ALL_RPMS = ${_TOOL_RPMS} ${_WORKLOAD_RPMS}
 # By default we only build images for the following distributions:
 _DISTROS = centos-8 centos-7 fedora-33 fedora-32
 
+# By default we won't build the Tool Data Sink and Tool Meister images
 all: all-tags $(foreach distro, ${_DISTROS}, ${distro}-all-tagged)
+
+tds: all-tags $(foreach distro, ${_DISTROS}, ${distro}-tool-data-sink-tagged)
+
+tm: all-tags $(foreach distro, ${_DISTROS}, ${distro}-tool-meister-tagged)
 
 #+
 # Tagging targets
@@ -97,11 +102,29 @@ push-major-minor: $(foreach distro, ${_DISTROS}, ${distro}-push-major-minor)
 %-all-tagged: %-all %-tags.lis
 	./apply-tags pbench-agent-all-$* $*-tags.lis
 
-%-all: %-tools-tagged %-workloads-tagged %-all.Dockerfile
+%-all: %-workloads-tagged %-tool-data-sink-tagged %-tool-meister-tagged %-all.Dockerfile
 	./build-image all $* $*-tags.lis
 
 %-all.Dockerfile: Dockerfile.layered.j2 %-tags.lis
 	jinja2 Dockerfile.layered.j2 -D distro=$* -D tag="$$(grep -v -E '^v' $*-tags.lis)" -D kind="all" -D rpms="${_ALL_RPMS}" > ./$@
+
+%-tool-data-sink-tagged: %-tool-data-sink %-tags.lis
+	./apply-tags pbench-agent-tool-data-sink-$* $*-tags.lis
+
+%-tool-data-sink: %-tools-tagged %-tool-data-sink.Dockerfile
+	./build-image tool-data-sink $* $*-tags.lis
+
+%-tool-data-sink.Dockerfile: Dockerfile.tds.j2 %-tags.lis
+	jinja2 Dockerfile.tds.j2 -D distro=$* -D tag="$$(grep -v -E '^v' $*-tags.lis)" > ./$@
+
+%-tool-meister-tagged: %-tool-meister %-tags.lis
+	./apply-tags pbench-agent-tool-meister-$* $*-tags.lis
+
+%-tool-meister: %-tools-tagged %-tool-meister.Dockerfile
+	./build-image tool-meister $* $*-tags.lis
+
+%-tool-meister.Dockerfile: Dockerfile.tm.j2 %-tags.lis
+	jinja2 Dockerfile.tm.j2 -D distro=$* -D tag="$$(grep -v -E '^v' $*-tags.lis)" > ./$@
 
 %-tools-tagged: %-tools %-tags.lis
 	./apply-tags pbench-agent-tools-$* $*-tags.lis

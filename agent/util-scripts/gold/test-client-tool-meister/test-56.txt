@@ -129,7 +129,6 @@ Collecting system information
 /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end/testhost.example.com/tm-sysinfo.out
 /var/tmp/pbench-test-utils/pbench/mock-run/tm
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/pbench-tool-data-sink.err
-/var/tmp/pbench-test-utils/pbench/mock-run/tm/pbench-tool-data-sink.log
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/pbench-tool-data-sink.out
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/prom.log
 /var/tmp/pbench-test-utils/pbench/mock-run/tm/prometheus.yml
@@ -302,12 +301,9 @@ install_check_output = mpstat: pbench-sysstat-12.0.3 is installed
 
 --- mock-run/metadata.log file contents
 +++ mock-run/tm/pbench-tool-data-sink.err file contents
-Bottle v#.##.## server starting up (using DataSinkWsgiServer(handler_class=<class 'pbench.agent.tool_data_sink.DataSinkWsgiServer.__init__.<locals>.DataSinkWsgiRequestHandler'>))...
-Listening on http://localhost:8080/
-Hit Ctrl-C to quit.
 
---- mock-run/tm/pbench-tool-data-sink.err file contents
-+++ mock-run/tm/pbench-tool-data-sink.log file contents
+Bottle v#.##.## server starting up (using DataSinkWsgiServer(handler_class=<class 'pbench.agent.tool_data_sink.DataSinkWsgiServer.__init__.<locals>.DataSinkWsgiRequestHandler'>))...
+Hit Ctrl-C to quit.
 INFO pbench-tool-data-sink execute -- Tool Data Sink terminating
 INFO pbench-tool-data-sink log_request -- 127.0.0.1 - - "PUT /sysinfo-data/27c00bc325171c4893ef3862b4340952/remote_a.example.com HTTP/1.1" 200 0
 INFO pbench-tool-data-sink log_request -- 127.0.0.1 - - "PUT /sysinfo-data/27c00bc325171c4893ef3862b4340952/remote_b.example.com HTTP/1.1" 200 0
@@ -322,7 +318,8 @@ INFO pbench-tool-data-sink log_request -- 127.0.0.1 - - "PUT /tool-data/9e243dae
 INFO pbench-tool-data-sink tm_log_capture -- Running Tool Meister log capture ...
 INFO pbench-tool-data-sink web_server_run -- Bottle web server exited
 INFO pbench-tool-data-sink web_server_run -- Running Bottle web server ...
---- mock-run/tm/pbench-tool-data-sink.log file contents
+Listening on http://localhost:8080/
+--- mock-run/tm/pbench-tool-data-sink.err file contents
 +++ mock-run/tm/pbench-tool-data-sink.out file contents
 --- mock-run/tm/pbench-tool-data-sink.out file contents
 +++ mock-run/tm/prom.log file contents
@@ -338,9 +335,9 @@ scrape_configs:
     - targets: ['localhost:9090']
 
 
-  - job_name: 'testhost.example.com_dcgm'
+  - job_name: 'remote_b.example.com_node-exporter'
     static_configs:
-    - targets: ['testhost.example.com:8000']
+    - targets: ['remote_b.example.com:9100']
 
 
   - job_name: 'remote_c.example.com_dcgm'
@@ -348,9 +345,9 @@ scrape_configs:
     - targets: ['remote_c.example.com:8000']
 
 
-  - job_name: 'remote_b.example.com_node-exporter'
+  - job_name: 'testhost.example.com_dcgm'
     static_configs:
-    - targets: ['remote_b.example.com:9100']
+    - targets: ['testhost.example.com:8000']
 --- mock-run/tm/prometheus.yml file contents
 +++ mock-run/tm/redis.conf file contents
 bind localhost

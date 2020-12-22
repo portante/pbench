@@ -70,8 +70,8 @@ def main(argv):
 
     # The Redis server is always running on the local host with the CLI.
     with Client(
-        redis_host="localhost",
-        redis_port=redis_port,
+        redis_host=os.environ.get("REDIS_HOST", "localhost"),
+        redis_port=os.environ.get("REDIS_PORT", redis_port),
         channel_prefix=cli_tm_channel_prefix,
         logger=logger,
     ) as client:

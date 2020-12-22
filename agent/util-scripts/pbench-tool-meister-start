@@ -84,7 +84,7 @@ import redis
 
 from pbench.agent import PbenchAgentConfig
 from pbench.agent.constants import (
-    redis_port,
+    redis_port as def_redis_port,
     cli_tm_channel_prefix,
     tm_channel_suffix_to_client,
     tm_channel_suffix_from_client,
@@ -537,33 +537,52 @@ def main(_prog, cli_params):
     # +
     # Step 2. - Start the Redis Server
     # -
+    if cli_params.redis_server is None:
+        # Create the Redis server pbench-specific configuration file
+        redis_conf = tm_dir / "redis.conf"
+        params = {
+            "hostnames": hostnames,
+            "tm_dir": tm_dir,
+            "redis_port": def_redis_port,
+        }
+        try:
+            with redis_conf.open("w") as fp:
+                fp.write(redis_conf_tmpl.format(**params))
+        except Exception:
+            logger.exception("failed to create redis server configuration")
+            return ReturnCode.EXCREDISCONFIG
 
-    # Create the Redis server pbench-specific configuration file
-    redis_conf = tm_dir / "redis.conf"
-    params = {"hostnames": hostnames, "tm_dir": tm_dir, "redis_port": redis_port}
-    try:
-        with redis_conf.open("w") as fp:
-            fp.write(redis_conf_tmpl.format(**params))
-    except Exception:
-        logger.exception("failed to create redis server configuration")
-        return ReturnCode.EXCREDISCONFIG
-
-    # Start the Redis Server itself
-    redis_srvr = "redis-server"
-    redis_srvr_path = find_executable(redis_srvr)
-    redis_pid = tm_dir / f"redis_{redis_port:d}.pid"
-    logger.debug("2. starting redis server")
-    try:
-        retcode = os.spawnl(os.P_WAIT, redis_srvr_path, redis_srvr, redis_conf)
-    except Exception:
-        logger.exception("failed to create redis server, daemonized")
-        return ReturnCode.EXCSPAWNREDIS
+        # Start the Redis Server itself
+        redis_srvr = "redis-server"
+        redis_srvr_path = find_executable(redis_srvr)
+        redis_pid = tm_dir / f"redis_{def_redis_port:d}.pid"
+        logger.debug("2. starting redis server")
+        try:
+            retcode = os.spawnl(os.P_WAIT, redis_srvr_path, redis_srvr, redis_conf)
+        except Exception:
+            logger.exception("failed to create redis server, daemonized")
+            return ReturnCode.EXCSPAWNREDIS
+        else:
+            if retcode != 0:
+                logger.error(
+                    "failed to create redis server, daemonized; return code: %d",
+                    retcode,
+                )
+                return ReturnCode.REDISFAILED
+        redis_host = "localhost"
+        redis_port = def_redis_port
     else:
-        if retcode != 0:
-            logger.error(
-                "failed to create redis server, daemonized; return code: %d", retcode
-            )
-            return ReturnCode.REDISFAILED
+        parts = cli_params.redis_server.split(":", 1)
+        if len(parts) != 2:
+            logger.error("Bad Redis server specified, '%s'", cli_params.redis_server)
+            return ReturnCode.BADREDISARG
+        try:
+            redis_port = int(parts[1])
+        except Exception:
+            logger.error("Bad Redis port specified, '%s'", cli_params.redis_server)
+            return ReturnCode.BADREDISPORT
+        else:
+            redis_host = parts[0]
 
     # Connect to the Redis Server.
     #
@@ -574,11 +593,11 @@ def main(_prog, cli_params):
     # listen for responses from the Tool Data Sink.
     try:
         to_client_channel = f"{cli_tm_channel_prefix}-{tm_channel_suffix_to_client}"
-        redis_server = redis.Redis(host="localhost", port=redis_port, db=0)
+        redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
         to_client_chan = RedisChannelSubscriber(redis_server, to_client_channel)
     except Exception as exc:
         logger.error(
-            "Unable to connect to redis server, %s:%d: %r", "localhost", redis_port, exc
+            "Unable to connect to redis server, %s:%d: %r", redis_host, redis_port, exc
         )
         return kill_redis_server(redis_pid, ReturnCode.REDISCHANFAILED)
 
@@ -601,9 +620,9 @@ def main(_prog, cli_params):
             controller=_controller,
             group=group,
             hostname=host,
+            label=tool_group.get_label(host),
             tool_metadata=tool_metadata.getFullData(),
             tools=tools,
-            label=tool_group.get_label(host),
         )
         # Create a separate key for the Tool Meister that will be on that host
         #
@@ -624,13 +643,13 @@ def main(_prog, cli_params):
     # Sink.
     tds_param_key = f"tds-{group}"
     tds = dict(
-        channel_prefix=cli_tm_channel_prefix,
         benchmark_run_dir=str(benchmark_run_dir),
         bind_hostname=tm_bind_hostname,
+        channel_prefix=cli_tm_channel_prefix,
         group=group,
+        tool_metadata=tool_metadata.getFullData(),
         tool_trigger=tool_group.trigger,
         tools=tool_group_data,
-        tool_metadata=tool_metadata.getFullData(),
         # The following are optional
         optional_md=optional_md,
     )
@@ -646,186 +665,193 @@ def main(_prog, cli_params):
     # 4. Start the Tool Data Sink process
     # -
 
-    # FIXME: if only one host is registered, and that host is the same as this
-    # controller, then don't bother starting the Tool Data Sink.
-    logger.debug("4. starting tool data sink")
-    try:
-        pid = os.fork()
-        if pid == 0:
-            # In the child!
+    if cli_params.redis_server is None:
+        # FIXME: if only one host is registered, and that host is the same as this
+        # controller, then don't bother starting the Tool Data Sink.
+        logger.debug("4. starting tool data sink")
+        try:
+            pid = os.fork()
+            if pid == 0:
+                # In the child!
 
-            # The main() of the Tool Data Sink module will not return here
-            # since it will daemonize itself and this child pid will be
-            # replaced by a new pid.
-            status = tds_main(
-                [
-                    PROG.parent / "pbench-tool-data-sink",
-                    "localhost",
-                    str(redis_port),
-                    tds_param_key,
-                ]
-            )
-            sys.exit(status)
-        else:
-            # In the parent!
-
-            # Wait for the child to finish daemonizing itself.
-            retcode = waitpid(pid)
-            if retcode != 0:
-                logger.error(
-                    "failed to create pbench data sink, daemonized; return code: %d",
-                    retcode,
+                # The main() of the Tool Data Sink module will not return here
+                # since it will daemonize itself and this child pid will be
+                # replaced by a new pid.
+                status = tds_main(
+                    [
+                        PROG.parent / "tool-meister" / "pbench-tool-data-sink",
+                        "localhost",
+                        str(redis_port),
+                        tds_param_key,
+                        "yes",
+                    ]
                 )
-    except Exception:
-        logger.exception("failed to create pbench data sink, daemonized")
-        return kill_redis_server(redis_pid, ReturnCode.TDSFORKFAILED)
-    else:
-        # Wait for logging channel to be up and ready before we start the
-        # local and remote Tool Meisters.
-        num_present = 0
-        while num_present == 0:
-            try:
-                num_present = redis_server.publish(
-                    f"{cli_tm_channel_prefix}-{tm_channel_suffix_to_logging}",
-                    "pbench-tool-meister-start - verify logging channel up",
-                )
-            except Exception:
-                logger.exception("Failed to verify Tool Data Sink logging sink working")
-                return kill_redis_server(redis_pid, ReturnCode.TDSLOGPUBFAILED)
+                sys.exit(status)
             else:
-                if num_present == 0:
-                    time.sleep(0.1)
+                # In the parent!
+
+                # Wait for the child to finish daemonizing itself.
+                retcode = waitpid(pid)
+                if retcode != 0:
+                    logger.error(
+                        "failed to create pbench data sink, daemonized; return code: %d",
+                        retcode,
+                    )
+        except Exception:
+            logger.exception("failed to create pbench data sink, daemonized")
+            return kill_redis_server(redis_pid, ReturnCode.TDSFORKFAILED)
+        else:
+            # Wait for logging channel to be up and ready before we start the
+            # local and remote Tool Meisters.
+            num_present = 0
+            while num_present == 0:
+                try:
+                    num_present = redis_server.publish(
+                        f"{cli_tm_channel_prefix}-{tm_channel_suffix_to_logging}",
+                        "pbench-tool-meister-start - verify logging channel up",
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to verify Tool Data Sink logging sink working"
+                    )
+                    return kill_redis_server(redis_pid, ReturnCode.TDSLOGPUBFAILED)
+                else:
+                    if num_present == 0:
+                        time.sleep(0.1)
 
     # +
     # 5. Start all the local and remote Tool Meisters
     # -
 
-    failures = 0
-    successes = 0
-    # NOTE: it is assumed that the location of the pbench-tool-meister command
-    # is the same on the local host as it is on any remote host.
-    tool_meister_cmd = PROG.parent / "tool-meister" / "pbench-tool-meister"
-    ssh_cmd = "ssh"
-    ssh_path = find_executable(ssh_cmd)
-    base_args = [
-        ssh_cmd,
-    ]
-    base_args.extend(shlex.split(ssh_opts))
-    args = [
-        "<host replace me>",
-        f"{tool_meister_cmd}-remote",
-        tm_bind_hostname,
-        str(redis_port),
-        "<tm param key>",
-        "yes",
-    ]
-    tms = dict()
-    tm_count = 0
-    for host in tool_group.hostnames.keys():
-        tm_count += 1
-        tm_param_key = f"tm-{group}-{host}"
-        if host == full_hostname:
-            logger.debug("5a. starting localhost tool meister")
-            try:
-                pid = os.fork()
-                if pid == 0:
-                    # In the child!
+    if cli_params.redis_server is None:
+        failures = 0
+        successes = 0
+        # NOTE: it is assumed that the location of the pbench-tool-meister command
+        # is the same on the local host as it is on any remote host.
+        tool_meister_cmd = PROG.parent / "tool-meister" / "pbench-tool-meister"
+        ssh_cmd = "ssh"
+        ssh_path = find_executable(ssh_cmd)
+        base_args = [
+            ssh_cmd,
+        ]
+        base_args.extend(shlex.split(ssh_opts))
+        args = [
+            "<host replace me>",
+            f"{tool_meister_cmd}-remote",
+            tm_bind_hostname,
+            str(redis_port),
+            "<tm param key>",
+            "yes",
+        ]
+        tms = dict()
+        tm_count = 0
+        for host in tool_group.hostnames.keys():
+            tm_count += 1
+            tm_param_key = f"tm-{group}-{host}"
+            if host == full_hostname:
+                logger.debug("5a. starting localhost tool meister")
+                try:
+                    pid = os.fork()
+                    if pid == 0:
+                        # In the child!
 
-                    # The main() of the Tool Meister module will not return
-                    # here since it will daemonize itself and this child pid
-                    # will be replaced by a new pid.
-                    status = tm_main(
-                        [
-                            str(tool_meister_cmd),
-                            "localhost",
-                            str(redis_port),
-                            tm_param_key,
-                            "yes",
-                        ]
+                        # The main() of the Tool Meister module will not return
+                        # here since it will daemonize itself and this child pid
+                        # will be replaced by a new pid.
+                        status = tm_main(
+                            [
+                                str(tool_meister_cmd),
+                                "localhost",
+                                str(redis_port),
+                                tm_param_key,
+                                "yes",
+                            ]
+                        )
+                        sys.exit(status)
+                    else:
+                        # In the parent!
+                        pass
+                except Exception:
+                    logger.exception(
+                        "failed to create localhost tool meister, daemonized"
                     )
-                    sys.exit(status)
+                    failures += 1
+                    tms[host] = {"pid": None, "status": "failed"}
                 else:
-                    # In the parent!
-                    pass
-            except Exception:
-                logger.exception("failed to create localhost tool meister, daemonized")
-                failures += 1
-                tms[host] = {"pid": None, "status": "failed"}
+                    # Record the child pid to wait below.
+                    tms[host] = {"pid": pid, "status": "forked"}
             else:
-                # Record the child pid to wait below.
-                tms[host] = {"pid": pid, "status": "forked"}
-        else:
-            args[0] = host
-            args[4] = tm_param_key
-            ssh_args = base_args + args
-            logger.debug(
-                "5b. starting remote tool meister, ssh_path=%r ssh_args=%r",
-                ssh_path,
-                ssh_args,
-            )
+                args[0] = host
+                args[4] = tm_param_key
+                ssh_args = base_args + args
+                logger.debug(
+                    "5b. starting remote tool meister, ssh_path=%r ssh_args=%r",
+                    ssh_path,
+                    ssh_args,
+                )
+                try:
+                    pid = os.spawnv(os.P_NOWAIT, ssh_path, ssh_args)
+                except Exception:
+                    logger.exception(
+                        "failed to create a tool meister instance for host %s", host
+                    )
+                    tms[host] = {"pid": None, "status": "failed"}
+                else:
+                    # Record the child pid to wait below.
+                    tms[host] = {"pid": pid, "status": "spawned"}
+
+        failures = 0
+        for host, tm_proc in tms.items():
+            if tm_proc["status"] == "failed":
+                failures += 1
+                continue
+            pid = tm_proc["pid"]
             try:
-                pid = os.spawnv(os.P_NOWAIT, ssh_path, ssh_args)
+                exit_status = waitpid(pid)
             except Exception:
+                failures += 1
                 logger.exception(
                     "failed to create a tool meister instance for host %s", host
                 )
-                tms[host] = {"pid": None, "status": "failed"}
             else:
-                # Record the child pid to wait below.
-                tms[host] = {"pid": pid, "status": "spawned"}
+                if exit_status != 0:
+                    failures += 1
+                    logger.error(
+                        "failed to start tool meister on remote host '%s'"
+                        " (pid %d), exit status: %d",
+                        host,
+                        pid,
+                        exit_status,
+                    )
+                else:
+                    successes += 1
 
-    failures = 0
-    for host, tm_proc in tms.items():
-        if tm_proc["status"] == "failed":
-            failures += 1
-            continue
-        pid = tm_proc["pid"]
-        try:
-            exit_status = waitpid(pid)
-        except Exception:
-            failures += 1
-            logger.exception(
-                "failed to create a tool meister instance for host %s", host
-            )
-        else:
-            if exit_status != 0:
-                failures += 1
-                logger.error(
-                    "failed to start tool meister on remote host '%s'"
-                    " (pid %d), exit status: %d",
-                    host,
-                    pid,
-                    exit_status,
+        if failures > 0:
+            # Don't wait for the Tool Meisters
+            logger.info("terminating tool meister startup due to failures")
+            terminate_msg = dict(action="terminate", group=group, directory=None)
+            try:
+                ret = redis_server.publish(
+                    f"{cli_tm_channel_prefix}-{tm_channel_suffix_from_client}",
+                    json.dumps(terminate_msg, sort_keys=True),
                 )
+            except Exception:
+                logger.exception("Failed to publish terminate message")
             else:
-                successes += 1
+                logger.debug("publish('terminate') = %r", ret)
+            return kill_redis_server(redis_pid, ReturnCode.TMFAILURES)
 
-    if failures > 0:
-        # Don't wait for the Tool Meisters
-        logger.info("terminating tool meister startup due to failures")
-        terminate_msg = dict(action="terminate", group=group, directory=None)
-        try:
-            ret = redis_server.publish(
-                f"{cli_tm_channel_prefix}-{tm_channel_suffix_from_client}",
-                json.dumps(terminate_msg, sort_keys=True),
+        if successes == 0:
+            logger.warning(
+                "unable to successfully start any tool meisters,"
+                " but encountered no failures either: terminating"
             )
-        except Exception:
-            logger.exception("Failed to publish terminate message")
-        else:
-            logger.debug("publish('terminate') = %r", ret)
-        return kill_redis_server(redis_pid, ReturnCode.TMFAILURES)
+            return kill_redis_server(redis_pid, ReturnCode.TMNOSUCCESSES)
 
-    if successes == 0:
-        logger.warning(
-            "unable to successfully start any tool meisters,"
-            " but encountered no failures either: terminating"
+        assert successes == tm_count, (
+            f"Logic Bomb! Number of created Tool Meisters, {successes}, does not"
+            f" match the expected number of Tool Meisters, {tm_count}"
         )
-        return kill_redis_server(redis_pid, ReturnCode.TMNOSUCCESSES)
-
-    assert successes == tm_count, (
-        f"Logic Bomb! Number of created Tool Meisters, {successes}, does not"
-        f" match the expected number of Tool Meisters, {tm_count}"
-    )
 
     # +
     # 6. Wait for the TDS to send a message reporting that it, and all the
@@ -840,7 +866,11 @@ def main(_prog, cli_params):
     )
     ret_val = wait_for_tds(to_client_chan, logger)
     if ret_val != 0:
-        return kill_redis_server(redis_pid, ReturnCode.TDSWAITFAILURE)
+        if cli_params.redis_server is None:
+            # We created the Redis server, so we should clean it up.
+            return kill_redis_server(redis_pid, ReturnCode.TDSWAITFAILURE)
+        else:
+            return ReturnCode.TDSWAITFAILURE
 
     # Setup a Client API object using our existing to_client_chan object to
     # drive the following client operations ("sysinfo" [optional] and "init"
@@ -882,8 +912,9 @@ def main(_prog, cli_params):
                 logger.debug("8. Initialize persistent tools")
                 ret_val = client.publish(group, tool_dir, "init", None)
                 if ret_val != ReturnCode.SUCCESS:
-                    ret_val = kill_redis_server(redis_pid, ReturnCode.INITFAILED)
-
+                    if cli_params.redis_server is None:
+                        # We created the Redis server, so we should clean it up.
+                        ret_val = kill_redis_server(redis_pid, ReturnCode.INITFAILED)
     return ret_val
 
 
@@ -898,6 +929,15 @@ if __name__ == "__main__":
         dest="sysinfo",
         default=None,
         help="The list of system information items to be collected.",
+    )
+    parser.add_argument(
+        "--redis-server",
+        dest="redis_server",
+        default=None,
+        help=(
+            "Use an existing Redis server specified by <hostname>:<port>;"
+            " implies an existing Tool Data Sink and Tool Meisters as well."
+        ),
     )
     parser.add_argument(
         "tool_group", help="The tool group of items to be run by the Tool Meisters."
