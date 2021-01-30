@@ -55,10 +55,9 @@ _BUFFER_SIZE = 65536
 # Maximum size of the tar ball for collected tool data.
 _MAX_TOOL_DATA_SIZE = 2 ** 30
 
-# Executable path of the tar, cp, and podman programs.
+# Executable path of the tar and cp programs.
 tar_path = None
 cp_path = None
-podman_path = None
 
 
 def _now(when):
@@ -149,6 +148,8 @@ class DataSinkWsgiServer(ServerAdapter):
 class BaseCollector:
     """Abstract class for persistent tool data collectors"""
 
+    # Each sub-class must provide a name.
+    name = None
     allowed_tools = {"noop-collector": None}
 
     def __init__(
@@ -172,6 +173,7 @@ class BaseCollector:
 
         self.run = []
         self.tool_group_dir = self.benchmark_run_dir / f"tools-{self.tool_group}"
+        self.tool_dir = self.tool_group_dir / self.name
         self.template_dir = Environment(
             autoescape=False,
             loader=FileSystemLoader(str(self.templates_path)),
@@ -186,6 +188,22 @@ class BaseCollector:
         Must be overriden by the sub-class.
         """
         assert False, "Must be overriden by sub-class"
+
+    def _mk_tool_dir(self):
+        """_mk_tool_dir - create the tool directory for a persistent tool.
+
+        Returns a Pathlib object of the created directory on success, None on
+        failure.
+        """
+        try:
+            self.tool_dir.mkdir()
+        except Exception as exc:
+            self.logger.error(
+                "Tool directory %s creation failed: '%s'", self.tool_dir, exc
+            )
+            raise
+        else:
+            self.logger.debug("Create tool directory %s", self.tool_dir)
 
     def render_from_template(self, template, context):
         """render_from_template - Helper method used to generate the contents
@@ -236,6 +254,8 @@ class BaseCollector:
 class PromCollector(BaseCollector):
     """Persistent tool data collector for tools compatible with Prometheus"""
 
+    name = "prometheus"
+
     def __init__(self, *args, **kwargs):
         """Constructor - responsible for setting up the particulars for the
         Prometheus collector, including how to instruct prometheus to gather
@@ -246,10 +266,9 @@ class PromCollector(BaseCollector):
             raise Exception("External 'prometheus' executable not found")
 
         super().__init__(*args, **kwargs)
-        self.volume = self.tool_group_dir / "prometheus"
         self.tool_context = []
         for host, tools in sorted(self.host_tools_dict.items()):
-            for tool in sorted(tools):
+            for tool in sorted(tools["names"]):
                 port = self.tool_metadata.getProperties(tool)["port"]
                 self.tool_context.append(
                     dict(hostname=f"{host}_{tool}", hostport=f"{host}:{port}")
@@ -262,30 +281,32 @@ class PromCollector(BaseCollector):
         the directory prometheus will write its data, and creates the sub-
         process that runs Prometheus.
         """
+        try:
+            self._mk_tool_dir()
+        except Exception:
+            return
+
         yml = self.render_from_template("prometheus.yml", dict(tools=self.tool_context))
         assert yml is not None, f"Logic bomb!  {self.tool_context!r}"
-        with open("prometheus.yml", "w") as config:
+        with (self.tool_dir / "prometheus.yml").open("w") as config:
             config.write(yml)
 
-        with open("prom.log", "w") as prom_logs:
+        args = [
+            self.prometheus_path,
+            f"--config.file={self.benchmark_run_dir}/tm/prometheus.yml",
+            f"--storage.tsdb.path={self.tool_dir}",
+            "--web.console.libraries=/usr/share/prometheus/console_libraries",
+            "--web.console.templates=/usr/share/prometheus/consoles",
+        ]
+        with (self.tool_dir / "prom.log").open("w") as prom_logs:
             try:
-                os.mkdir(self.volume)
-                os.chmod(self.volume, 0o775)
+                run = subprocess.Popen(
+                    args, cwd=self.tool_dir, stdout=prom_logs, stderr=prom_logs
+                )
             except Exception as exc:
-                self.logger.error("Volume creation failed: '%s'", exc)
-                return
-
-            args = [
-                self.prometheus_path,
-                f"--config.file={self.benchmark_run_dir}/tm/prometheus.yml",
-                f"--storage.tsdb.path={self.volume}",
-                "--web.console.libraries=/usr/share/prometheus/console_libraries",
-                "--web.console.templates=/usr/share/prometheus/consoles",
-            ]
-            try:
-                run = subprocess.Popen(args, stdout=prom_logs, stderr=prom_logs)
-            except Exception as exc:
-                self.logger.error("Podman run process failed: '%s', %r", exc, args)
+                self.logger.error(
+                    "Prometheus process creation failed: '%s', %r", exc, args
+                )
                 return
             else:
                 self.run.append(run)
@@ -305,8 +326,8 @@ class PromCollector(BaseCollector):
         args = [
             tar_path,
             "--remove-files",
-            "-zcf",
-            f"{self.tool_group_dir}/prometheus_data.tar.gz",
+            "-Jcf",
+            f"{self.tool_group_dir}/prometheus_data.tar.xz",
             "-C",
             f"{self.tool_group_dir}/",
             "prometheus",
@@ -319,6 +340,8 @@ class PromCollector(BaseCollector):
 class PcpCollector(BaseCollector):
     """Persistent tool data collector for tools compatible with Prometheus"""
 
+    name = "pcp"
+
     # Default path to the "pmlogger" executable.
     _pmlogger_path_def = "/usr/bin/pmlogger"
     _pmcd_wait_path_def = "/usr/libexec/pcp/bin/pmcd_wait"
@@ -328,7 +351,6 @@ class PcpCollector(BaseCollector):
         the PCP collector.
         """
         super().__init__(*args, **kwargs)
-        self.volume = self.tool_group_dir / "pcp"
         pmcd_wait_path = find_executable("pmcd_wait")
         if pmcd_wait_path is None:
             pmcd_wait_path = self._pmcd_wait_path_def
@@ -344,9 +366,8 @@ class PcpCollector(BaseCollector):
         storing the collected data, and runs the PCP collector itself.
         """
         try:
-            self.volume.mkdir()
-        except Exception as exc:
-            self.logger.error("Volume %s creation failed: '%s'", self.volume, exc)
+            self._mk_tool_dir()
+        except Exception:
             return
 
         # Create all the host directories for the PCP data and create all the
@@ -354,7 +375,10 @@ class PcpCollector(BaseCollector):
         pmcd_wait_l = []
         errors = 0
         for host in self.host_tools_dict:
-            host_dir = self.volume / host
+            label = self.host_tools_dict[host]["label"]
+            if label:
+                label = f"{label}:"
+            host_dir = self.tool_dir / f"{label}{host}"
             try:
                 host_dir.mkdir()
             except Exception as exc:
@@ -367,7 +391,7 @@ class PcpCollector(BaseCollector):
                 f"--host={host}:55677",
                 "-t 30",
             ]
-            self.logger.debug("Starting pmcd_wait: %r", args)
+            self.logger.debug("Starting pmcd_wait, cwd %s, args %r", host_dir, args)
             with (host_dir / "pmlogger-proc.log").open("w") as pmlogger_logs:
                 try:
                     run = subprocess.Popen(
@@ -398,7 +422,10 @@ class PcpCollector(BaseCollector):
         # Now that we have verified all the pmcd processes are running, we can
         # create all the loggers.
         for host in self.host_tools_dict:
-            host_dir = self.volume / host
+            label = self.host_tools_dict[host]["label"]
+            if label:
+                label = f"{label}:"
+            host_dir = self.tool_dir / f"{label}{host}"
             args = [
                 self.pmlogger_path,
                 "-r",
@@ -409,7 +436,7 @@ class PcpCollector(BaseCollector):
                 f"--host={host}:55677",
                 "%Y%m%d.%H.%M",
             ]
-            self.logger.debug("Starting pmlogger: %r", args)
+            self.logger.debug("Starting pmlogger, cwd %s, args %r", host_dir, args)
             with (host_dir / "pmlogger-proc.log").open("a+") as pmlogger_logs:
                 try:
                     run = subprocess.Popen(
@@ -440,8 +467,8 @@ class PcpCollector(BaseCollector):
         args = [
             tar_path,
             "--remove-files",
-            "-zcf",
-            f"{self.tool_group_dir}/pcp_data.tar.gz",
+            "-Jcf",
+            f"{self.tool_group_dir}/pcp_data.tar.xz",
             "-C",
             f"{self.tool_group_dir}/",
             "pcp",
@@ -1196,14 +1223,17 @@ class ToolDataSink(Bottle):
                         if tool_data["collector"] == "prometheus":
                             prom_tools.append(tool)
                         elif tool_data["collector"] == "pcp":
-                            if self._tm_tracking[tm]["transient_tools"]:
-                                pcp_tools = self._tm_tracking[tm]["transient_tools"]
-                            else:
-                                pcp_tools = ["base_pcp"]
+                            pcp_tools.append(tool)
                     if len(prom_tools) > 0:
-                        prom_tool_dict[self._tm_tracking[tm]["hostname"]] = prom_tools
+                        prom_tool_dict[self._tm_tracking[tm]["hostname"]] = {
+                            "label": self._tm_tracking[tm]["label"],
+                            "names": prom_tools,
+                        }
                     if len(pcp_tools) > 0:
-                        pcp_tool_dict[self._tm_tracking[tm]["hostname"]] = pcp_tools
+                        pcp_tool_dict[self._tm_tracking[tm]["hostname"]] = {
+                            "label": self._tm_tracking[tm]["label"],
+                            "names": pcp_tools,
+                        }
                 if prom_tool_dict:
                     self.logger.debug(
                         "init prometheus tools for tool meisters: %s",

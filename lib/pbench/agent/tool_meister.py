@@ -43,6 +43,7 @@ import os
 import requests
 import requests.exceptions
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -151,7 +152,11 @@ class Tool:
         e_file = self.tool_dir / f"tm-{self.name}-start.err"
         with o_file.open("w") as ofp, e_file.open("w") as efp:
             self.start_process = subprocess.Popen(
-                args, stdin=subprocess.DEVNULL, stdout=ofp, stderr=efp
+                args,
+                cwd=self.tool_dir,
+                stdin=subprocess.DEVNULL,
+                stdout=ofp,
+                stderr=efp,
             )
 
     def stop(self):
@@ -192,7 +197,11 @@ class Tool:
         e_file = self.tool_dir / f"tm-{self.name}-stop.err"
         with o_file.open("w") as ofp, e_file.open("w") as efp:
             self.stop_process = subprocess.Popen(
-                args, stdin=subprocess.DEVNULL, stdout=ofp, stderr=efp
+                args,
+                cwd=self.tool_dir,
+                stdin=subprocess.DEVNULL,
+                stdout=ofp,
+                stderr=efp,
             )
 
     def wait(self):
@@ -233,11 +242,49 @@ class PersistentTool(Tool):
         self.args = None
         self.process = None
 
-    def start(self):
+    def start(self, env=None):
+        assert self.args is not None, "Logic bomb!  {self.name} install had failed!"
         assert (
-            self.process is not None
-        ), "Logic bomb!  persistent tool not properly sub-classed"
-        self.logger.info("Started persistent tool %s, %r", self.name, self.args)
+            self.tool_dir is not None
+        ), "Logic bomb!  No persistent tool directory provided!"
+        self.tool_dir = self.tool_dir / self.name
+        self.tool_dir.mkdir()
+        o_file = self.tool_dir / f"tm-{self.name}-start.out"
+        e_file = self.tool_dir / f"tm-{self.name}-start.err"
+        with o_file.open("w") as ofp, e_file.open("w") as efp:
+            if env:
+                pp = env["PYTHONPATH"]
+                self.logger.debug(
+                    "Starting persistent tool %s, env PYTHONPATH=%s, args %r",
+                    self.name,
+                    pp,
+                    self.args,
+                )
+                self.process = subprocess.Popen(
+                    " ".join(self.args),
+                    cwd=self.tool_dir,
+                    stdout=ofp,
+                    stderr=efp,
+                    env=self.env,
+                    shell=True,
+                )
+            else:
+                self.logger.debug(
+                    "Starting persistent tool %s, args %r", self.name, self.args
+                )
+                self.process = subprocess.Popen(
+                    self.args, cwd=self.tool_dir, stdout=ofp, stderr=efp,
+                )
+        if env:
+            pp = env["PYTHONPATH"]
+            self.logger.info(
+                "Started persistent tool %s, env PYTHONPATH=%s, args %r",
+                self.name,
+                pp,
+                self.args,
+            )
+        else:
+            self.logger.info("Started persistent tool %s, %r", self.name, self.args)
 
     def stop(self):
         if self.process is None:
@@ -246,7 +293,21 @@ class PersistentTool(Tool):
 
         self.process.terminate()
         self.process.wait()
-        self.logger.info("Stopped persistent tool %s", self.name)
+        sts = self.process.returncode
+        if sts != 0 and sts != -(signal.SIGTERM):
+            o_file = self.tool_dir / f"tm-{self.name}-start.out"
+            e_file = self.tool_dir / f"tm-{self.name}-start.err"
+            stdout = o_file.read_text()
+            stderr = e_file.read_text()
+            self.logger.error(
+                "Persistent tool %s failed to return success, %d, stdout %r, stderr %r",
+                self.name,
+                self.process.returncode,
+                stdout,
+                stderr,
+            )
+        else:
+            self.logger.info("Stopped persistent tool %s", self.name)
         self.process = None
 
     def wait(self):
@@ -301,8 +362,9 @@ class DcgmTool(PersistentTool):
                     str(self.install_path / "bindings"),
                     str(self.install_path / "bindings" / "common"),
                 ]
+                unit_tests = bool(os.environ.get("_PBENCH_UNIT_TESTS"))
                 prev_path = os.environ.get("PYTHONPATH", "")
-                if prev_path:
+                if prev_path and not unit_tests:
                     new_path_l.append(prev_path)
                 self.env = os.environ.copy()
                 self.env["PYTHONPATH"] = ":".join(new_path_l)
@@ -315,16 +377,8 @@ class DcgmTool(PersistentTool):
         return (0, "dcgm tool properly installed")
 
     def start(self):
-        assert self.args is not None, "Logic bomb!  dcgm install had failed!"
-        self.logger.debug(self.args[1])
-        self.process = subprocess.Popen(
-            self.args,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.STDOUT,
-            env=self.env,
-            shell=True,
-        )
-        super().start()
+        # The dcgm tool needs PYTHONPATH, and run via the shell.
+        super().start(env=self.env)
 
 
 class NodeExporterTool(PersistentTool):
@@ -347,14 +401,6 @@ class NodeExporterTool(PersistentTool):
         if self.args is None:
             return (1, "node_exporter tool not found")
         return (0, "node_exporter tool properly installed")
-
-    def start(self):
-        assert self.args is not None, "Logic bomb!  node-exporter install had failed!"
-        self.logger.debug(self.args[0])
-        self.process = subprocess.Popen(
-            self.args, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
-        )
-        super().start()
 
 
 class PcpTool(PersistentTool):
@@ -389,14 +435,6 @@ class PcpTool(PersistentTool):
         if self.args is None:
             return (1, "pcp tool (pmcd) not found")
         return (0, "pcp tool (pmcd) properly installed")
-
-    def start(self):
-        assert self.args is not None, "Logic bomb!  pcp install had failed!"
-        self.logger.debug(self.args[0])
-        self.process = subprocess.Popen(
-            self.args, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
-        )
-        super().start()
 
 
 class Terminate(Exception):
@@ -783,6 +821,47 @@ class ToolMeister:
         The Tool Data Sink will be setting up the actual processes which
         collect data from these tools.
         """
+        # Name of the temporary tool data directory to use when invoking
+        # tools.  This is a local temporary directory when the Tool Meister is
+        # remote from the pbench controller.
+        if self._controller == self._hostname:
+            # This is the case when the Tool Meister instance is running on
+            # the same host as the controller.  We just use the directory
+            # given to us in the `start` message.
+            try:
+                _dir = Path(data["directory"]).resolve(strict=True)
+            except Exception:
+                self.logger.exception(
+                    "Failed to access provided result directory, %s", data["directory"]
+                )
+                self._send_client_status("internal-error")
+                return False
+        else:
+            try:
+                _dir = Path(
+                    tempfile.mkdtemp(
+                        dir=self._tmp_dir, prefix=f"tm.{self._group}.{os.getpid()}."
+                    )
+                )
+            except Exception:
+                self.logger.exception(
+                    "Failed to create temporary directory for start operation"
+                )
+                self._send_client_status("internal-error")
+                return False
+        if self._label:
+            sub_dir = f"{self._label}:{self._hostname}"
+        else:
+            sub_dir = self._hostname
+        _tool_dir = _dir / sub_dir
+        try:
+            _tool_dir.mkdir()
+        except Exception:
+            self.logger.exception(
+                "Failed to create local result directory, %s", _tool_dir
+            )
+            self._send_client_status("internal-error")
+            return False
         failures = 0
         tool_cnt = 0
         for name, tool_opts in sorted(self._tools.items()):
@@ -797,6 +876,7 @@ class ToolMeister:
                         name,
                         tool_opts,
                         pbench_install_dir=self.pbench_install_dir,
+                        tool_dir=_tool_dir,
                         logger=self.logger,
                     )
                     persistent_tool.start()
@@ -1508,14 +1588,18 @@ def daemon(
     sys.stderr.flush()
     sys.stdout.flush()
 
-    pidfile_name = f"{param_key}.pid"
+    if params["hostname"] != params["controller"]:
+        working_dir = tmp_dir
+    else:
+        working_dir = Path(".")
+    pidfile_name = working_dir / f"{param_key}.pid"
+    d_out = working_dir / f"{param_key}.out"
+    d_err = working_dir / f"{param_key}.err"
     pfctx = pidfile.PIDFile(pidfile_name)
-    with open(f"{param_key}.out", "w") as sofp, open(
-        f"{param_key}.err", "w"
-    ) as sefp, DaemonContext(
+    with d_out.open("w") as sofp, d_err.open("w") as sefp, DaemonContext(
         stdout=sofp,
         stderr=sefp,
-        working_directory=os.getcwd(),
+        working_directory=working_dir,
         umask=0o022,
         pidfile=pfctx,
     ):
@@ -1626,10 +1710,23 @@ def main(argv):
 
     try:
         # The temporary directory to use for capturing all tool data.
-        tmp_dir = os.environ["pbench_tmp"]
-    except Exception as e:
-        print(f"{PROG}: Missing pbench_tmp environment variable: {e}", file=sys.stderr)
+        tmp_dir = Path(os.environ["pbench_tmp"]).resolve(strict=True)
+    except KeyError:
+        print(f"{PROG}: Missing pbench_tmp environment variable", file=sys.stderr)
         return 4
+    except Exception as e:
+        print(
+            f"{PROG}: Error working with pbench_tmp environment variable, '{tmp_dir}': {e}",
+            file=sys.stderr,
+        )
+        return 4
+    else:
+        if not tmp_dir.is_dir():
+            print(
+                f"{PROG}: The pbench_tmp environment variable, '{tmp_dir}', does not resolve to a directory",
+                file=sys.stderr,
+            )
+            return 4
 
     try:
         redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
