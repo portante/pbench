@@ -293,7 +293,7 @@ class PromCollector(BaseCollector):
 
         args = [
             self.prometheus_path,
-            f"--config.file={self.benchmark_run_dir}/tm/prometheus.yml",
+            f"--config.file={self.tool_dir}/prometheus.yml",
             f"--storage.tsdb.path={self.tool_dir}",
             "--web.console.libraries=/usr/share/prometheus/console_libraries",
             "--web.console.templates=/usr/share/prometheus/consoles",
