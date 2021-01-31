@@ -93,6 +93,8 @@ class Tool:
     "tool-scripts/base-tool" bash script.
     """
 
+    _tool_type = "Transient"
+
     def __init__(
         self, name, tool_opts, pbench_install_dir=None, tool_dir=None, logger=None,
     ):
@@ -204,6 +206,29 @@ class Tool:
                 stderr=efp,
             )
 
+    def _wait_for_process(self, process):
+        """_wait_for_process - generic method to wait for a given process to
+        stop after 30 seconds, emitting a message every 5 seconds in between.
+
+        Returns the process return code on success, or None if the process
+        failed to exit.
+        """
+        count = 6
+        sts = None
+        while count > 0 and sts is None:
+            try:
+                sts = process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                count -= 1
+                if count > 0:
+                    self.logger.info(
+                        "%s tool %s has not stopped after %d seconds",
+                        self._tool_type,
+                        self.name,
+                        5 * (6 - count),
+                    )
+        return sts
+
     def wait(self):
         """Wait for any tool processes to terminate after a "stop" process has
         completed.
@@ -211,20 +236,49 @@ class Tool:
         Waits for the tool's "stop" process to complete, if started, then
         waits for the tool's start process to complete.
         """
-        if self.stop_process is not None:
-            if self.start_process is None:
-                raise ToolException(
-                    f"Tool({self.name}) does not have a start process running"
-                )
-            self.logger.info("waiting for stop %s", self.name)
-            # We wait for the stop process to finish first ...
-            self.stop_process.wait()
-            self.stop_process = None
-            # ... then we wait for the start process to finish
-            self.start_process.wait()
-            self.start_process = None
-        else:
+        if self.stop_process is None:
             raise ToolException(f"Tool({self.name}) wait not called after 'stop'")
+        if self.start_process is None:
+            raise ToolException(
+                f"Tool({self.name}) does not have a start process running"
+            )
+
+        self.logger.info("Waiting for transient tool %s stop process", self.name)
+        # We wait for the stop process to finish first ...
+        sts = self._wait_for_process(self.stop_process)
+        if sts is None:
+            # The stop process did not terminate gracefully after 30 seconds,
+            # so we bring out the big guns ...
+            self.stop_process.kill()
+            self.logger.error(
+                "Killed un-responsive transient tool %s stop process after"
+                " 30 seconds",
+                self.name,
+            )
+        elif sts != 0 and sts != -(signal.SIGTERM):
+            self.logger.warning(
+                "Transient tool %s stop process failed with %d", self.name, sts
+            )
+        self.stop_process = None
+
+        # ... then we wait for the start process to finish, but we only wait
+        # for 30 seconds before we kill it.
+        self.logger.info("Waiting for transient tool %s start process", self.name)
+        try:
+            sts = self.start_process.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            self.start_process.kill()
+            self.logger.warning(
+                "Killed un-responsive transient tool %s start process after"
+                " 30 seconds",
+                self.name,
+            )
+        else:
+            if sts != 0 and sts != -(signal.SIGTERM):
+                self.logger.warning(
+                    "Transient tool %s start process failed with %d", self.name, sts
+                )
+        self.start_process = None
 
 
 class PersistentTool(Tool):
@@ -236,6 +290,8 @@ class PersistentTool(Tool):
     Each persistent tool extends this intermediate "base" class with its
     own particular behaviors.
     """
+
+    _tool_type = "Persistent"
 
     def __init__(self, name, tool_opts, logger=None, **kwargs):
         super().__init__(name, tool_opts, logger=logger, **kwargs)
@@ -287,19 +343,44 @@ class PersistentTool(Tool):
             self.logger.info("Started persistent tool %s, %r", self.name, self.args)
 
     def stop(self):
+        """stop - terminate the persistent tool sub-process.
+
+        This method does not wait for the process to actually exit. The caller
+        should issue a wait() for that.
+        """
         if self.process is None:
             self.logger.error("Nothing to terminate")
-            return 0
+            return
 
+        # First try to gracefully terminate.
         self.process.terminate()
-        self.process.wait()
-        sts = self.process.returncode
-        if sts != 0 and sts != -(signal.SIGTERM):
+        self.logger.info("Terminate issued for persistent tool %s", self.name)
+
+    def wait(self):
+        """wait - Wait for the persistent tool to exit.
+
+        Requires the caller to issue a stop() first.
+
+        The wait() method will wait for 30 seconds before forcibly killing
+        the persistent tool sub-process.  It will emit an informational log
+        message every 5 seconds in between.
+        """
+        if self.process is None:
+            self.logger.error("Nothing to terminate")
+            return
+
+        sts = self._wait_for_process(self.process)
+        if sts is None:
+            self.process.kill()
+            self.logger.error(
+                "Killed un-responsive persistent tool %s after 30 seconds", self.name
+            )
+        elif sts != 0 and sts != -(signal.SIGTERM):
             o_file = self.tool_dir / f"tm-{self.name}-start.out"
             e_file = self.tool_dir / f"tm-{self.name}-start.err"
             stdout = o_file.read_text()
             stderr = e_file.read_text()
-            self.logger.error(
+            self.logger.warning(
                 "Persistent tool %s failed to return success, %d, stdout %r, stderr %r",
                 self.name,
                 self.process.returncode,
@@ -309,11 +390,6 @@ class PersistentTool(Tool):
         else:
             self.logger.info("Stopped persistent tool %s", self.name)
         self.process = None
-
-    def wait(self):
-        assert (
-            self.process is None
-        ), f"Tool({self.name}) has an unexpected process running"
 
 
 class DcgmTool(PersistentTool):
@@ -1329,20 +1405,30 @@ class ToolMeister:
         """end_tools - stop all the persistent data collection tools."""
         failures = 0
         tool_cnt = 0
-        for name in self._tools.keys():
+        for name, persistent_tool in self._persistent_tools.items():
+            assert name in self._tools, (
+                f"Logic bomb!  Persistent tool, '{name}' not in registered"
+                f" list of tools, '{self._tools!r}'."
+            )
+            tool_cnt += 1
             try:
-                persistent_tool = self._persistent_tools[name]
-            except KeyError:
-                pass
-            else:
-                tool_cnt += 1
-                try:
-                    persistent_tool.stop()
-                except Exception:
-                    self.logger.exception(
-                        "Failed to stop persistent tool %s running in background", name
-                    )
-                    failures += 1
+                persistent_tool.stop()
+            except Exception:
+                self.logger.exception(
+                    "Failed to stop persistent tool %s running in background", name
+                )
+                failures += 1
+        for name, persistent_tool in self._persistent_tools.items():
+            tool_cnt += 1
+            try:
+                persistent_tool.wait()
+            except Exception:
+                self.logger.exception(
+                    "Failed to wait for persistent tool %s to stop running"
+                    " in background",
+                    name,
+                )
+                failures += 1
         if failures > 0:
             msg = f"{failures} of {tool_cnt} failed stopping persistent tools"
             self._send_client_status(msg)
