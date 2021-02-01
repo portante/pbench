@@ -539,14 +539,19 @@ testhost.example.com 0015 INFO pbench-tool-meister sysinfo -- pbench-sysinfo-dum
 testhost.example.com 0016 INFO pbench-tool-meister sysinfo -- testhost.example.com: sysinfo send (no-op) lite /var/tmp/pbench-test-utils/pbench/mock-run/sysinfo/end/testhost.example.com
 testhost.example.com 0017 INFO pbench-tool-meister __exit__ -- testhost.example.com: terminating
 --- mock-run/tm/tm.logs file contents
-+++ tools-lite/pcp/red:remote_c.example.com/pmcd_wait.file file contents
++++ tools-lite/pcp/pmproxy-proc.log file contents
+--- tools-lite/pcp/pmproxy-proc.log file contents
++++ tools-lite/pcp/pmproxy.file file contents
+/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pmproxy --log=- --foreground --timeseries --port=44566 --redishost=localhost --redisport=17001 --config=/var/tmp/pbench-test-utils/opt/pbench-agent/templates/pmproxy.conf
+--- tools-lite/pcp/pmproxy.file file contents
++++ tools-lite/pcp/remote_c.example.com/pmcd_wait.file file contents
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pmcd_wait --host=remote_c.example.com:55677 -t 30
---- tools-lite/pcp/red:remote_c.example.com/pmcd_wait.file file contents
-+++ tools-lite/pcp/red:remote_c.example.com/pmlogger-proc.log file contents
---- tools-lite/pcp/red:remote_c.example.com/pmlogger-proc.log file contents
-+++ tools-lite/pcp/red:remote_c.example.com/pmlogger.file file contents
-/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pmlogger -r -t 3s -c /var/tmp/pbench-test-utils/opt/pbench-agent/templates/pmlogger.conf --host=remote_c.example.com:55677 %Y%m%d.%H.%M
---- tools-lite/pcp/red:remote_c.example.com/pmlogger.file file contents
+--- tools-lite/pcp/remote_c.example.com/pmcd_wait.file file contents
++++ tools-lite/pcp/remote_c.example.com/pmlogger-proc.log file contents
+--- tools-lite/pcp/remote_c.example.com/pmlogger-proc.log file contents
++++ tools-lite/pcp/remote_c.example.com/pmlogger.file file contents
+/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pmlogger --log=- --report -t 3s -c /var/tmp/pbench-test-utils/opt/pbench-agent/templates/pmlogger.conf --host=remote_c.example.com:55677 /var/tmp/pbench-test-utils/pbench/mock-run/tools-lite/pcp/data/red:remote_c.example.com/%Y%m%d.%H.%M
+--- tools-lite/pcp/remote_c.example.com/pmlogger.file file contents
 +++ tools-lite/prometheus/prom.log file contents
 --- tools-lite/prometheus/prom.log file contents
 +++ tools-lite/prometheus/prometheus.file file contents
@@ -607,7 +612,8 @@ scrape_configs:
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pidof -x mpstat
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pmcd --foreground --socket=./pmcd.socket --port=55677 --config=/var/tmp/pbench-test-utils/opt/pbench-agent/templates/pmcd.conf
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pmcd_wait --host=remote_c.example.com:55677 -t 30
-/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pmlogger -r -t 3s -c /var/tmp/pbench-test-utils/opt/pbench-agent/templates/pmlogger.conf --host=remote_c.example.com:55677 %Y%m%d.%H.%M
+/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pmlogger --log=- --report -t 3s -c /var/tmp/pbench-test-utils/opt/pbench-agent/templates/pmlogger.conf --host=remote_c.example.com:55677 /var/tmp/pbench-test-utils/pbench/mock-run/tools-lite/pcp/data/red:remote_c.example.com/%Y%m%d.%H.%M
+/var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/pmproxy --log=- --foreground --timeseries --port=44566 --redishost=localhost --redisport=17001 --config=/var/tmp/pbench-test-utils/opt/pbench-agent/templates/pmproxy.conf
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/prometheus --config.file=/var/tmp/pbench-test-utils/pbench/mock-run/tools-lite/prometheus/prometheus.yml --storage.tsdb.path=/var/tmp/pbench-test-utils/pbench/mock-run/tools-lite/prometheus --web.console.libraries=/usr/share/prometheus/console_libraries --web.console.templates=/usr/share/prometheus/consoles
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/samples/scripts/dcgm_prometheus.py
 /var/tmp/pbench-test-utils/opt/pbench-agent/unittest-scripts/samples/scripts/dcgm_prometheus.py
