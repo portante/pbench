@@ -236,17 +236,22 @@ class BaseCollector:
         for run in self.run:
             try:
                 run.terminate()
-                run.wait()
+            except Exception as exc:
+                self.logger.error(
+                    "Failed to terminate expected collector process: '%s'", exc
+                )
+                errors += 1
+        for run in self.run:
+            try:
+                sts = run.wait()
             except Exception as exc:
                 self.logger.error(
                     "Failed to terminate expected collector process: '%s'", exc
                 )
                 errors += 1
             else:
-                if run.returncode != 0:
-                    self.logger.warning(
-                        "Collector process terminated with %d", run.returncode
-                    )
+                if sts != 0:
+                    self.logger.warning("Collector process terminated with %d", sts)
         if errors > 0:
             raise Exception("Failed to terminate all the collector processes")
 
@@ -343,14 +348,17 @@ class PcpCollector(BaseCollector):
     name = "pcp"
 
     # Default path to the "pmlogger" executable.
-    _pmlogger_path_def = "/usr/bin/pmlogger"
     _pmcd_wait_path_def = "/usr/libexec/pcp/bin/pmcd_wait"
+    _pmlogger_path_def = "/usr/bin/pmlogger"
+    _pmproxy_path_def = "/usr/libexec/pcp/bin/pmproxy"
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, redis_host=None, redis_port=None, **kwargs):
         """Constructor - responsible for setting up the state needed to run
         the PCP collector.
         """
         super().__init__(*args, **kwargs)
+        self.redis_host = redis_host
+        self.redis_port = redis_port
         pmcd_wait_path = find_executable("pmcd_wait")
         if pmcd_wait_path is None:
             pmcd_wait_path = self._pmcd_wait_path_def
@@ -359,6 +367,10 @@ class PcpCollector(BaseCollector):
         if pmlogger_path is None:
             pmlogger_path = self._pmlogger_path_def
         self.pmlogger_path = pmlogger_path
+        pmproxy_path = find_executable("pmproxy")
+        if pmproxy_path is None:
+            pmproxy_path = self._pmproxy_path_def
+        self.pmproxy_path = pmproxy_path
 
     def launch(self):
         """launch - responsible for creating the configuration file for
@@ -369,6 +381,14 @@ class PcpCollector(BaseCollector):
             self._mk_tool_dir()
         except Exception:
             return
+        data_dir = self.tool_dir / "data"
+        try:
+            data_dir.mkdir()
+        except Exception as exc:
+            self.logger.error(
+                "PCP data directory %s creation failed: '%s'", data_dir, exc
+            )
+            return
 
         # Create all the host directories for the PCP data and create all the
         # processes which will wait for the pmcd processes to show up.
@@ -378,11 +398,22 @@ class PcpCollector(BaseCollector):
             label = self.host_tools_dict[host]["label"]
             if label:
                 label = f"{label}:"
-            host_dir = self.tool_dir / f"{label}{host}"
+            host_dir = data_dir / f"{label}{host}"
+            log_dir = self.tool_dir / host
+            try:
+                log_dir.mkdir()
+            except Exception as exc:
+                self.logger.error(
+                    "Log directory %s creation failed: '%s'", log_dir, exc
+                )
+                errors += 1
+                continue
             try:
                 host_dir.mkdir()
             except Exception as exc:
-                self.logger.error("Volume %s creation failed: '%s'", host_dir, exc)
+                self.logger.error(
+                    "Host directory %s creation failed: '%s'", host_dir, exc
+                )
                 errors += 1
                 continue
 
@@ -391,12 +422,12 @@ class PcpCollector(BaseCollector):
                 f"--host={host}:55677",
                 "-t 30",
             ]
-            self.logger.debug("Starting pmcd_wait, cwd %s, args %r", host_dir, args)
-            with (host_dir / "pmlogger-proc.log").open("w") as pmlogger_logs:
+            self.logger.debug("Starting pmcd_wait, cwd %s, args %r", log_dir, args)
+            with (log_dir / "pmlogger-proc.log").open("w") as pmlogger_logs:
                 try:
                     run = subprocess.Popen(
                         args,
-                        cwd=host_dir,
+                        cwd=log_dir,
                         stdout=pmlogger_logs,
                         stderr=subprocess.STDOUT,
                     )
@@ -419,29 +450,61 @@ class PcpCollector(BaseCollector):
         if errors > 0:
             return
 
-        # Now that we have verified all the pmcd processes are running, we can
-        # create all the loggers.
+        # Now that we have verified all the pmcd processes are running, we
+        # create the pmproxy process ahead of all the loggers so that it can
+        # send metrics to the Redis server as they arrive..
+        conf_path = str(self.templates_path / "pmproxy.conf")
+        args = [
+            self.pmproxy_path,
+            "--log=-",
+            "--foreground",
+            "--timeseries",
+            "--port=44566",
+            f"--redishost={self.redis_host}",
+            f"--redisport={self.redis_port}",
+            f"--config={conf_path}",
+        ]
+        env = os.environ.copy()
+        env["PCP_ARCHIVE_DIR"] = data_dir
+        self.logger.debug("Starting pmporxy, cwd %s, args %r", self.tool_dir, args)
+        with (self.tool_dir / "pmproxy-proc.log").open("w") as pmproxy_logs:
+            try:
+                run = subprocess.Popen(
+                    args,
+                    cwd=self.tool_dir,
+                    stdout=pmproxy_logs,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                )
+            except Exception as exc:
+                self.logger.error("Pmproxy run process failed: '%s', %r", exc, args)
+            else:
+                self.run_pmproxy = run
+
+        # Finally, create all the loggers.
         for host in self.host_tools_dict:
             label = self.host_tools_dict[host]["label"]
             if label:
                 label = f"{label}:"
-            host_dir = self.tool_dir / f"{label}{host}"
+            host_dir = data_dir / f"{label}{host}"
+            log_dir = self.tool_dir / host
             args = [
                 self.pmlogger_path,
-                "-r",
+                "--log=-",
+                "--report",
                 "-t",
                 "3s",  # FIXME: take from tools interval
                 "-c",
                 str(self.templates_path / "pmlogger.conf"),
                 f"--host={host}:55677",
-                "%Y%m%d.%H.%M",
+                f"{host_dir}/%Y%m%d.%H.%M",
             ]
-            self.logger.debug("Starting pmlogger, cwd %s, args %r", host_dir, args)
-            with (host_dir / "pmlogger-proc.log").open("a+") as pmlogger_logs:
+            self.logger.debug("Starting pmlogger, cwd %s, args %r", log_dir, args)
+            with (log_dir / "pmlogger-proc.log").open("a+") as pmlogger_logs:
                 try:
                     run = subprocess.Popen(
                         args,
-                        cwd=host_dir,
+                        cwd=log_dir,
                         stdout=pmlogger_logs,
                         stderr=subprocess.STDOUT,
                     )
@@ -461,8 +524,17 @@ class PcpCollector(BaseCollector):
         except Exception:
             self.logger.error("Pmlogger failed to terminate")
             return
+        finally:
+            try:
+                self.run_pmproxy.terminate()
+                sts = self.run_pmproxy.wait()
+            except Exception as exc:
+                self.logger.error("Failed to terminate pmproxy process: '%s'", exc)
+            else:
+                if sts != 0:
+                    self.logger.warning("Pmproxy process terminated with %d", sts)
 
-        self.logger.debug("Pmlogger terminated")
+        self.logger.debug("Pmproxy and pmlogger(s) terminated")
 
         args = [
             tar_path,
@@ -492,6 +564,8 @@ class ToolDataSink(Bottle):
         hostname,
         bind_hostname,
         redis_server,
+        redis_host,
+        redis_port,
         channel_prefix,
         benchmark_run_dir,
         tool_group,
@@ -511,6 +585,8 @@ class ToolDataSink(Bottle):
         self.hostname = hostname
         self.bind_hostname = bind_hostname
         self.redis_server = redis_server
+        self.redis_host = redis_host
+        self.redis_port = redis_port
         self.channel_prefix = channel_prefix
         self.benchmark_run_dir = benchmark_run_dir
         self.tool_group = tool_group
@@ -1250,7 +1326,7 @@ class ToolDataSink(Bottle):
                         self.tool_group,
                         prom_tool_dict,
                         self.tool_metadata,
-                        self.logger,
+                        logger=self.logger,
                     )
                     self._prom_server.launch()
                 if pcp_tool_dict:
@@ -1264,7 +1340,9 @@ class ToolDataSink(Bottle):
                         self.tool_group,
                         pcp_tool_dict,
                         self.tool_metadata,
-                        self.logger,
+                        redis_host=self.redis_host,
+                        redis_port=self.redis_port,
+                        logger=self.logger,
                     )
                     self._pcp_server.launch()
             elif action == "end":
@@ -1624,7 +1702,7 @@ def main(argv):
             return 7
         logger.debug("Tool Data Sink parameters check out, daemonizing ...")
         redis_server.connection_pool.disconnect()
-        del redis_server
+        redis_server = None
 
     optional_md = params["optional_md"]
 
@@ -1666,6 +1744,8 @@ def main(argv):
                 hostname,
                 bind_hostname,
                 redis_server,
+                redis_host,
+                redis_port,
                 channel_prefix,
                 benchmark_run_dir,
                 tool_group,
