@@ -138,6 +138,10 @@ def wait_for_tds(chan, logger):
             break
     return 0 if status == "success" else 1
 
+class ReturnCode:
+    """ReturnCode - symbolic return codes for when the main program of
+    pbench-tool-meister-start.
+    """
 
 class ReturnCode:
     """ReturnCode - symbolic return codes for the main program of

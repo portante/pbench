@@ -468,6 +468,238 @@ class PcpTool(PersistentTool):
         return (0, "pcp tool (pmcd) properly installed")
 
 
+class PersistentTool(Tool):
+    """PersistentTool - Encapsulates all the states needed to run persistent
+    tooling in the background.  A PersistentTool extends the base Tool class
+    with some simple modifications for stopping the tool without the need for
+    an external stop script.
+
+    Each persistent tool extends this intermediate "base" class with its
+    own particular behaviors.
+    """
+
+    _tool_type = "Persistent"
+
+    def __init__(self, name, tool_opts, logger=None, **kwargs):
+        super().__init__(name, tool_opts, logger=logger, **kwargs)
+        self.args = None
+        self.process = None
+
+    def start(self, env=None):
+        assert self.args is not None, "Logic bomb!  {self.name} install had failed!"
+        assert (
+            self.tool_dir is not None
+        ), "Logic bomb!  No persistent tool directory provided!"
+        self.tool_dir = self.tool_dir / self.name
+        self.tool_dir.mkdir()
+        o_file = self.tool_dir / f"tm-{self.name}-start.out"
+        e_file = self.tool_dir / f"tm-{self.name}-start.err"
+        with o_file.open("w") as ofp, e_file.open("w") as efp:
+            if env:
+                pp = env["PYTHONPATH"]
+                self.logger.debug(
+                    "Starting persistent tool %s, env PYTHONPATH=%s, args %r",
+                    self.name,
+                    pp,
+                    self.args,
+                )
+                self.process = subprocess.Popen(
+                    " ".join(self.args),
+                    cwd=self.tool_dir,
+                    stdout=ofp,
+                    stderr=efp,
+                    env=self.env,
+                    shell=True,
+                )
+            else:
+                self.logger.debug(
+                    "Starting persistent tool %s, args %r", self.name, self.args
+                )
+                self.process = subprocess.Popen(
+                    self.args, cwd=self.tool_dir, stdout=ofp, stderr=efp,
+                )
+        if env:
+            pp = env["PYTHONPATH"]
+            self.logger.info(
+                "Started persistent tool %s, env PYTHONPATH=%s, args %r",
+                self.name,
+                pp,
+                self.args,
+            )
+        else:
+            self.logger.info("Started persistent tool %s, %r", self.name, self.args)
+
+    def stop(self):
+        """stop - terminate the persistent tool sub-process.
+
+        This method does not wait for the process to actually exit. The caller
+        should issue a wait() for that.
+        """
+        if self.process is None:
+            self.logger.error("Nothing to terminate")
+            return
+
+        # First try to gracefully terminate.
+        self.process.terminate()
+        self.logger.info("Terminate issued for persistent tool %s", self.name)
+
+    def wait(self):
+        """wait - Wait for the persistent tool to exit.
+
+        Requires the caller to issue a stop() first.
+
+        The wait() method will wait for 30 seconds before forcibly killing
+        the persistent tool sub-process.  It will emit an informational log
+        message every 5 seconds in between.
+        """
+        if self.process is None:
+            self.logger.error("Nothing to terminate")
+            return
+
+        sts = self._wait_for_process(self.process)
+        if sts is None:
+            self.process.kill()
+            self.logger.error(
+                "Killed un-responsive persistent tool %s after 30 seconds", self.name
+            )
+        elif sts != 0 and sts != -(signal.SIGTERM):
+            o_file = self.tool_dir / f"tm-{self.name}-start.out"
+            e_file = self.tool_dir / f"tm-{self.name}-start.err"
+            stdout = o_file.read_text()
+            stderr = e_file.read_text()
+            self.logger.warning(
+                "Persistent tool %s failed to return success, %d, stdout %r, stderr %r",
+                self.name,
+                self.process.returncode,
+                stdout,
+                stderr,
+            )
+        else:
+            self.logger.info("Stopped persistent tool %s", self.name)
+        self.process = None
+
+
+class DcgmTool(PersistentTool):
+    """DcgmTool - provide specific persistent tool behaviors for the "dcgm"
+    tool.
+
+    In particular, the dcgm tool requires the "--inst" option, requires the
+    PYTHONPATH environment variable be set properly, and must use a python2
+    environment.
+    """
+
+    def __init__(self, name, tool_opts, logger=None, **kwargs):
+        super().__init__(name, tool_opts, logger=logger, **kwargs)
+        # Looking for required "--inst" option, reformatting appropriately if
+        # found.
+        tool_opts_l = self.tool_opts.split(" ")
+        for opt in tool_opts_l:
+            if opt.startswith("--inst="):
+                if opt[-1] == "\n":
+                    install_path = opt[7:-1]
+                else:
+                    install_path = opt[7:]
+                self.install_path = Path(install_path)
+                self.logger.debug(
+                    "install path for tool %s, %s", name, self.install_path
+                )
+                break
+        else:
+            self.install_path = None
+            self.logger.debug("missing install path")
+        if self.install_path is None:
+            self.script_path = None
+            self.args = None
+            self.env = None
+        else:
+            self.script_path = (
+                self.install_path / "samples" / "scripts" / "dcgm_prometheus.py"
+            )
+            if not self.script_path.exists():
+                self.logger.error("missing script path, %s", self.script_path)
+                self.args = None
+                self.env = None
+            else:
+                self.args = ["python2", f"{self.script_path}"]
+                new_path_l = [
+                    str(self.install_path / "bindings"),
+                    str(self.install_path / "bindings" / "common"),
+                ]
+                unit_tests = bool(os.environ.get("_PBENCH_UNIT_TESTS"))
+                prev_path = os.environ.get("PYTHONPATH", "")
+                if prev_path and not unit_tests:
+                    new_path_l.append(prev_path)
+                self.env = os.environ.copy()
+                self.env["PYTHONPATH"] = ":".join(new_path_l)
+
+    def install(self):
+        if self.install_path is None:
+            return (1, "dcgm tool --inst argument missing")
+        elif self.args is None:
+            return (1, f"dcgm tool path, '{self.script_path}', not found")
+        return (0, "dcgm tool properly installed")
+
+    def start(self):
+        # The dcgm tool needs PYTHONPATH, and run via the shell.
+        super().start(env=self.env)
+
+
+class NodeExporterTool(PersistentTool):
+    """NodeExporterTool - provide specifics for running the "node-exporter"
+    tool.
+
+    The only particular behavior is that we find the proper "node_exporter"
+    executable in our PATH.
+    """
+
+    def __init__(self, name, tool_opts, logger=None, **kwargs):
+        super().__init__(name, tool_opts, logger=logger, **kwargs)
+        executable = find_executable("node_exporter")
+        if executable is None:
+            self.args = None
+        else:
+            self.args = [executable]
+
+    def install(self):
+        if self.args is None:
+            return (1, "node_exporter tool not found")
+        return (0, "node_exporter tool properly installed")
+
+
+class PcpTool(PersistentTool):
+    """PcpTool - provide specifics for running the "pcp" tool, which is really the "pmcd" process.
+    """
+
+    # Default path to the "pmcd" executable.
+    _pmcd_path_def = "/usr/libexec/pcp/bin/pmcd"
+
+    def __init__(self, name, tool_opts, logger=None, **kwargs):
+        super().__init__(name, tool_opts, logger=logger, **kwargs)
+        pmcd_path = find_executable("pmcd")
+        if pmcd_path is None:
+            pmcd_path = self._pmcd_path_def
+        executable = os.access(pmcd_path, os.X_OK)
+        if executable:
+            # FIXME - The Tool Data Sink and Tool Meister have to agree on the
+            # exact port number to use.  We can't use the default `pmcd` port
+            # number because it might conflict with an existing `pmcd`
+            # deployment out of our control.
+            self.args = [
+                pmcd_path,
+                "--foreground",
+                "--socket=./pmcd.socket",
+                "--port=55677",
+                f"--config={self.pbench_install_dir}/templates/pmcd.conf",
+            ]
+        else:
+            self.args = None
+
+    def install(self):
+        if self.args is None:
+            return (1, "pcp tool (pmcd) not found")
+        return (0, "pcp tool (pmcd) properly installed")
+
+
 class Terminate(Exception):
     """Simple exception to be raised when the Tool Meister main loop should exit
     gracefully.
@@ -1781,6 +2013,23 @@ def main(argv):
             return 4
 
     try:
+        # The temporary directory to use for capturing all tool data.
+        tmp_dir = os.environ["pbench_tmp"]
+    except Exception as e:
+        print(
+            f"{PROG}: Error working with pbench_tmp environment variable, '{tmp_dir}': {e}",
+            file=sys.stderr,
+        )
+        return 4
+    else:
+        if not tmp_dir.is_dir():
+            print(
+                f"{PROG}: The pbench_tmp environment variable, '{tmp_dir}', does not resolve to a directory",
+                file=sys.stderr,
+            )
+            return 4
+
+    try:
         redis_server = redis.Redis(host=redis_host, port=redis_port, db=0)
     except Exception as exc:
         print(
@@ -1789,6 +2038,7 @@ def main(argv):
         )
         return 5
 
+    _PROG = PROG if daemonize != "yes" else None
     try:
         # Wait for the key to show up with a value.
         params_str = wait_for_conn_and_key(

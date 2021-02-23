@@ -198,6 +198,14 @@ class ToolDataSinkError(Exception):
     pass
 
 
+class ToolDataSinkError(Exception):
+    """ToolDataSinkError - generic exception class for Tool Data Sink related
+    exceptions.
+    """
+
+    pass
+
+
 class BaseCollector:
     """Abstract class for persistent tool data collectors"""
 
@@ -463,6 +471,35 @@ class PcpCollector(BaseCollector):
             try:
                 log_dir.mkdir()
             except Exception as exc:
+                self.logger.error(
+                    "Host directory %s creation failed: '%s'", host_dir, exc
+                )
+                errors += 1
+                continue
+
+            args = [
+                self.pmcd_wait_path,
+                f"--host={host}:55677",
+                "-t 30",
+            ]
+            self.logger.debug("Starting pmcd_wait, cwd %s, args %r", log_dir, args)
+            with (log_dir / "pmlogger-proc.log").open("w") as pmlogger_logs:
+                try:
+                    run = subprocess.Popen(
+                        args,
+                        cwd=log_dir,
+                        stdout=pmlogger_logs,
+                        stderr=subprocess.STDOUT,
+                    )
+                except Exception as exc:
+                    self.logger.error("Pmcd_wait process failed: '%s', %r", exc, args)
+                    errors += 1
+                else:
+                    pmcd_wait_l.append((host, run))
+
+        for host, pmcd_wait in pmcd_wait_l:
+            pmcd_wait.wait()
+            if pmcd_wait.returncode != 0:
                 self.logger.error(
                     "Log directory %s creation failed: '%s'", log_dir, exc
                 )
@@ -1540,6 +1577,13 @@ class ToolDataSink(Bottle):
                 if prom_tool_dict or pcp_tool_dict:
                     tool_names = list(prom_tool_dict.keys())
                     tool_names.extend(list(pcp_tool_dict.keys()))
+                    self.logger.debug(
+                        "init persistent tools on tool meisters: %s",
+                        ", ".join(tool_names),
+                    )
+                else:
+                    self.logger.debug("No persistent tools to init")
+                if prom_tool_dict:
                     self.logger.debug(
                         "init persistent tools on tool meisters: %s",
                         ", ".join(tool_names),
