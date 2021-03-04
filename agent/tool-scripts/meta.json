@@ -37,7 +37,8 @@
 		"turbostat": null,
 		"user-tool": null,
 		"virsh-migrate": null,
-		"vmstat": null
+		"vmstat": null,
+		"pcp-transient": null
 	},
 
 	"persistent":{

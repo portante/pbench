@@ -285,6 +285,110 @@ class Tool:
         self.start_process = None
 
 
+class PcpTransTool(Tool):
+    # Default path to the "pmcd" executable.
+    _pmcd_path_def = "/usr/libexec/pcp/bin/pmcd"
+
+    # Default path to the "pmlogger" executable.
+    _pmcd_wait_path_def = "/usr/libexec/pcp/bin/pmcd_wait"
+    _pmlogger_path_def = "/usr/bin/pmlogger"
+
+    def __init__(self, name, tool_opts, logger=None, **kwargs):
+        super().__init__(name, tool_opts, logger=logger, **kwargs)
+        pmcd_path = find_executable("pmcd")
+        if pmcd_path is None:
+            pmcd_path = self._pmcd_path_def
+        executable = os.access(pmcd_path, os.X_OK)
+        if executable:
+            self.pmcd_args = [
+                pmcd_path,
+                "--foreground",
+                "--socket=./pmcd.socket",
+                "--port=55677",
+                f"--config={self.pbench_install_dir}/templates/pmcd.conf",
+            ]
+        else:
+            self.pmcd_args = None
+        pmlogger_path = find_executable("pmlogger")
+        if pmlogger_path is None:
+            pmlogger_path = self._pmlogger_path_def
+        executable = os.access(pmlogger_path, os.X_OK)
+        if executable:
+            self.pmlogger_args = [
+                pmlogger_path,
+                "--log=-",
+                "--report",
+                "-t",
+                "3s",
+                "-c",
+                f"{self.pbench_install_dir}/templates/pmlogger.conf",
+                "--host=localhost:55677",
+                f"{self.tool_dir}/%Y%m%d.%H.%M",
+            ]
+        else:
+            self.pmlogger_args = None
+        self.pmcd_process = None
+        self.pmlogger_process = None
+
+    def install(self):
+        if self.pmcd_args is None:
+            return (1, "pcp tool (pmcd) not found")
+        elif self.pmlogger_args is None:
+            return (1, "pcp tool (pmlogger) not found")
+        return (0, "pcp tool (pmcd) properly installed")
+
+    def start(self):
+        if self.pmcd_process or self.pmlogger_process:
+            raise ToolException(
+                f"Tool({self.name}) has an unexpected process still running"
+            )
+
+        self.logger.info(
+            "%s: start_tool -- %s -- %s",
+            self.name,
+            " ".join(self.pmcd_args),
+            " ".join(self.pmlogger_args),
+        )
+        o_file = self.tool_dir / f"tm-{self.name}-start.out"
+        e_file = self.tool_dir / f"tm-{self.name}-start.err"
+        with o_file.open("w") as ofp, e_file.open("w") as efp:
+            try:
+                self.pmcd_process = subprocess.Popen(
+                    self.pmcd_args,
+                    cwd=self.tool_dir,
+                    stdin=subprocess.DEVNULL,
+                    stdout=ofp,
+                    stderr=efp,
+                )
+            except Exception as exc:
+                self.logger.error(
+                    "Pmcd run process failed: '%s', %r", exc, self.pmcd_args
+                )
+            try:
+                self.pmlogger_process = subprocess.Popen(
+                    self.pmlogger_args,
+                    cwd=self.tool_dir,
+                    stdin=subprocess.DEVNULL,
+                    stdout=ofp,
+                    stderr=efp,
+                )
+            except Exception as exc:
+                self.logger.error(
+                    "Pmlogger run process failed: '%s', %r", exc, self.pmlogger_args
+                )
+
+    def stop(self):
+        # FIXME - Add error handling
+        self.logger.info("%s: stop_tool", self.name)
+        self.pmlogger_process.terminate()
+        self.pmcd_process.terminate()
+
+    def wait(self):
+        # FIXME - Add error handling
+        self.pmlogger_process.wait()
+        self.pmcd_process.wait()
+
+
 class PersistentTool(Tool):
     """PersistentTool - Encapsulates all the states needed to run persistent
     tooling in the background.  A PersistentTool extends the base Tool class
@@ -818,6 +922,7 @@ class ToolMeister:
         "dcgm": DcgmTool,
         "node-exporter": NodeExporterTool,
         "pcp": PcpTool,
+        "pcp-transient": PcpTransTool,
     }
 
     def __init__(
