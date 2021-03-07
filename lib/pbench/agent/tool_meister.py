@@ -1235,6 +1235,8 @@ class ToolMeister:
         for name, tool_opts in sorted(self._tools.items()):
             try:
                 tklass = self._tool_name_class_mappings[name]
+                if name not in self.persistent_tool_names:
+                    continue
             except KeyError:
                 pass
             else:
@@ -1351,7 +1353,11 @@ class ToolMeister:
                 continue
             tool_cnt += 1
             try:
-                tool = Tool(
+                tklass = self._tool_name_class_mappings[name]
+            except KeyError:
+                tklass = Tool
+            try:
+                tool = tklass(
                     name,
                     tool_opts,
                     pbench_install_dir=self.pbench_install_dir,
