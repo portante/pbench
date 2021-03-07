@@ -295,6 +295,8 @@ class PcpTransTool(Tool):
 
     def __init__(self, name, tool_opts, logger=None, **kwargs):
         super().__init__(name, tool_opts, logger=logger, **kwargs)
+        if self.tool_dir:
+            self.tool_dir = self.tool_dir / self.name
         pmcd_path = find_executable("pmcd")
         if pmcd_path is None:
             pmcd_path = self._pmcd_path_def
@@ -329,15 +331,18 @@ class PcpTransTool(Tool):
             self.pmlogger_args = None
         self.pmcd_process = None
         self.pmlogger_process = None
+        if self.tool_dir:
+            self.tool_dir.mkdir()
 
     def install(self):
         if self.pmcd_args is None:
             return (1, "pcp tool (pmcd) not found")
         elif self.pmlogger_args is None:
             return (1, "pcp tool (pmlogger) not found")
-        return (0, "pcp tool (pmcd) properly installed")
+        return (0, "pcp tool (pmcd and pmlogger properly installed")
 
     def start(self):
+        assert self.tool_dir is not None, "Logic bomb!  no tool directory provided!"
         if self.pmcd_process or self.pmlogger_process:
             raise ToolException(
                 f"Tool({self.name}) has an unexpected process still running"
