@@ -286,11 +286,17 @@ class Tool:
 
 
 class PcpTransTool(Tool):
+    """PcpTransTool - A more traditional alternative to the pcp persistent tool that
+                      allows one to run both the pmlogger and pmcd locally on each
+                      registered node. Additionally, this tool starts, stops, and
+                      sends data alongside other transient tools, rather than always
+                      running in the background.
+    """
+
     # Default path to the "pmcd" executable.
     _pmcd_path_def = "/usr/libexec/pcp/bin/pmcd"
 
     # Default path to the "pmlogger" executable.
-    _pmcd_wait_path_def = "/usr/libexec/pcp/bin/pmcd_wait"
     _pmlogger_path_def = "/usr/bin/pmlogger"
 
     def __init__(self, name, tool_opts, logger=None, **kwargs):
@@ -383,15 +389,27 @@ class PcpTransTool(Tool):
                 )
 
     def stop(self):
-        # FIXME - Add error handling
         self.logger.info("%s: stop_tool", self.name)
-        self.pmlogger_process.terminate()
-        self.pmcd_process.terminate()
+        try:
+            self.pmlogger_process.terminate()
+        except Exception as exc:
+            self.logger.error("Failed to terminate pmlogger: '%s", exc)
+        try:
+            self.pmcd_process.terminate()
+        except Exception as exc:
+            self.logger.error("Failed to terminate pmcd: '%s", exc)
 
     def wait(self):
-        # FIXME - Add error handling
-        self.pmlogger_process.wait()
-        self.pmcd_process.wait()
+        try:
+            self.pmlogger_process.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            self.logger.error(
+                "pmlogger not properly terminated, still waiting after 20s"
+            )
+        try:
+            self.pmcd_process.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            self.logger.error("pmcd not properly terminated, still waiting after 20s")
 
 
 class PersistentTool(Tool):
