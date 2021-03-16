@@ -293,21 +293,14 @@ class PcpTransTool(Tool):
                       running in the background.
     """
 
-    # Default path to the "pmcd" executable.
-    _pmcd_path_def = "/usr/libexec/pcp/bin/pmcd"
-
-    # Default path to the "pmlogger" executable.
-    _pmlogger_path_def = "/usr/bin/pmlogger"
-
     def __init__(self, name, tool_opts, logger=None, **kwargs):
         super().__init__(name, tool_opts, logger=logger, **kwargs)
         if self.tool_dir:
             self.tool_dir = self.tool_dir / self.name
+        if "/usr/libexec/pcp/bin" not in os.environ["PATH"]:
+            os.environ["PATH"] += os.pathsep + "/usr/libexec/pcp/bin"
         pmcd_path = find_executable("pmcd")
-        if pmcd_path is None:
-            pmcd_path = self._pmcd_path_def
-        executable = os.access(pmcd_path, os.X_OK)
-        if executable:
+        if pmcd_path:
             self.pmcd_args = [
                 pmcd_path,
                 "--foreground",
@@ -318,10 +311,7 @@ class PcpTransTool(Tool):
         else:
             self.pmcd_args = None
         pmlogger_path = find_executable("pmlogger")
-        if pmlogger_path is None:
-            pmlogger_path = self._pmlogger_path_def
-        executable = os.access(pmlogger_path, os.X_OK)
-        if executable:
+        if pmlogger_path:
             self.pmlogger_args = [
                 pmlogger_path,
                 "--log=-",
