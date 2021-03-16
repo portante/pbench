@@ -14,3 +14,4 @@ if len(sys.argv) != 2 or sys.argv[1] != "--help":
 if sys.argv[1] == "--help":
     print(f"{PROG}: Options:", file=sys.stdout)
     print(f"{PROG}: No tool-specific options currently", file=sys.stdout)
+
