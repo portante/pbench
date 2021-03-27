@@ -1789,7 +1789,6 @@ def main(argv):
         )
         return 5
 
-    _PROG = PROG if daemonize != "yes" else None
     try:
         # Wait for the key to show up with a value.
         params_str = wait_for_conn_and_key(
