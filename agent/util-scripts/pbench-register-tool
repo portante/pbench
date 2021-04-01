@@ -178,12 +178,12 @@ while true; do
 	--persistent)
 		shift
 		oldname=${name}
-		name=$(python3 -c "import sys, json; meta = json.load(open(sys.argv[1])); name = sys.argv[2];  print(name + '-persistent') if not name in meta['persistent'].keys() else print(name)" ${pbench_bin}/tool-scripts/meta.json ${name})
+		name=$(${pbench_bin}/util-scripts/get-internal-tool ${pbench_bin}/tool-scripts ${name} persistent)
 		;;
 	--transient)
 		shift
 		oldname=${name}
-		name=$(python3 -c "import sys, json; meta = json.load(open(sys.argv[1])); name = sys.argv[2];  print(name + '-transient') if not name in meta['transient'].keys() else print(name)" ${pbench_bin}/tool-scripts/meta.json ${name})
+		name=$(${pbench_bin}/util-scripts/get-internal-tool ${pbench_bin}/tool-scripts ${name} transient)
 		;;
 	-h|--help)
 		usage
@@ -421,7 +421,7 @@ function record_tool() {
 	else
 		_label_msg=""
 	fi
-    if [[ "${oldname}" != "" ]]; then
+	if [[ "${oldname}" != "" ]]; then
 		name=${oldname}
 	fi
 	local _msg="\"${name}\" tool is now registered for host \"${remote_arg}\"${_label_msg} in group \"${group}\""

@@ -296,7 +296,7 @@ class PcpTransTool(Tool):
     def __init__(self, name, tool_opts, logger=None, **kwargs):
         super().__init__(name, tool_opts, logger=logger, **kwargs)
         if self.tool_dir:
-            self.tool_dir = self.tool_dir / "pcp"
+            self.tool_dir = self.tool_dir / self.name.replace("-transient", "")
         if "/usr/libexec/pcp/bin" not in os.environ["PATH"]:
             os.environ["PATH"] += os.pathsep + "/usr/libexec/pcp/bin"
         pmcd_path = find_executable("pmcd")
