@@ -408,7 +408,7 @@ class Dataset(Database.Base):
     def create(**kwargs):
         """
         create A simple factory method to construct a new Dataset object and
-        add it to the database. Errors are hidden here, and we return None.
+        add it to the database.
 
         Args:
             kwargs (dict):
@@ -425,8 +425,7 @@ class Dataset(Database.Base):
                 "state": The initial state of the new dataset.
 
         Returns:
-            Dataset: A new Dataset object initialized with the keyword
-            parameters. (See `__init__` for details.)
+            A new Template object initialized with the keyword parameters.
         """
         try:
             dataset = Dataset(**kwargs)
