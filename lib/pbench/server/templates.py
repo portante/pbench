@@ -37,6 +37,25 @@ class JsonFile:
         self.modified = datetime.fromtimestamp(self.file.stat().st_mtime)
         self.json = None
 
+    def get_version(self) -> str:
+        """
+        Parse the metadata version information from the mapping file. This is
+        done on standalone template files and on "tool" template files, but
+        not on the "base" skeleton files shared by the tool templates. The
+        context is under control of the TemplateFile class load methods.
+
+        Raises:
+            MappingFileError: Mapping file doesn't contain proper version
+
+        Returns:
+            Template file metadata version
+        """
+        try:
+            version = self.json["_meta"]["version"]
+        except KeyError as e:
+            raise MappingFileError(f"mapping missing {e} in {self.file}: {self.json}")
+        return version
+
     def load(self):
         """
         Simple wrapper function to load a JSON object from the object's file,
@@ -56,6 +75,18 @@ class JsonFile:
                 raise JsonFileError("{}: {}".format(self.file, err))
         self.json = data
 
+    def merge(self, name: str, base: "JsonFile"):
+        """
+        Base class implementation for merge. The base class has no associated
+        skeleton document to merge but this no-op implementation allows merge
+        to be called on any JsonFile.
+
+        Args:
+            name: property name
+            base: The base JsonFile
+        """
+        pass
+
     def add_mapping(self, name: str, body: Dict[AnyStr, Any]):
         """
         Add a template property sub-document to the mappings.
@@ -70,6 +101,66 @@ class JsonFile:
                 "mappings" or "properties" keys.
         """
         self.json["properties"][name] = body
+
+
+class JsonToolFile(JsonFile):
+    """
+    Extend the JSON template file handling to provide merging JSON
+    tool templates with a base skeleton.
+    """
+
+    def load(self):
+        """
+        Tool mapping files define a sub-document in the Elasticsearch template
+        specific to the tool (e.g., "iostat") which exists within a common
+        base skeleton. The merge of the two includes elevating the "_meta"
+        version from the sub-document into the base document.
+
+        Here we extend the JsonFile load method to remove the sub-document
+        metadata and save it to be spliced into the base document by merge.
+        """
+        super().load()
+        self.meta = self.json["_meta"]
+        del self.json["_meta"]
+
+    def get_version(self) -> str:
+        """
+        Parse the metadata version information from the mapping file. This is
+        done on standalone template files and on "tool" template files, but
+        not on the "base" skeleton files shared by the tool templates. The
+        context is under control of the TemplateFile class load methods.
+
+        This produces a similar result to the superclass method; except that
+        JsonToolFile has already sequestered the version metadata to prepare
+        for merging with the skeleton.
+
+        Raises:
+            MappingFileError: Mapping file doesn't contain proper version
+
+        Returns:
+            Template file metadata version
+        """
+        try:
+            version = self.meta["version"]
+        except KeyError as e:
+            raise MappingFileError(f"mapping missing {e} in {self.file}: {self.meta}")
+        return version
+
+    def merge(self, name: str, base: JsonFile):
+        """
+        Merge a tool-specific sub-document into the common base Elasticsearch
+        template document by linking the tool's mapping and meta-version into
+        a copy of the base document.
+
+        Args:
+            name: property name
+            base: The base JsonFile
+        """
+        tool_mapping = copy.deepcopy(base.json)
+        tool_mapping["_meta"] = self.meta
+        sub_map = self.json
+        self.json = tool_mapping
+        self.add_mapping(name, sub_map)
 
 
 class TemplateFile:
@@ -158,103 +249,90 @@ class TemplateFile:
         self,
         prefix: str = None,
         mappings: Path = None,
-        settings: Path = None,
-        base: "TemplateFile" = None,
+        settings: JsonFile = None,
+        skeleton: JsonFile = None,
         tool: str = None,
-        skeleton: bool = False,
     ):
         """
         Describe an Elasticsearch template including a JSON document mappings
-        file, a JSON settings file, or both.
+        file and a JSON settings file, which will be merged into a full
+        Elasticsearch template payload.
 
-        A "base" template may also be linked, from which a final template will
-        be built using shared settings and optionally base mappings.
+        A "skeleton" JSON file may also be linked, from which the mappings will
+        be built by merging tool-specific properties and version into a common
+        base template.
 
         Args:
             prefix: Pbench index prefix string
             mappings: JSON document description. Defaults to None.
             settings: JSON index settings. Defaults to None.
-            base: Referenced base settings and/or mappings. Defaults to None.
             tool: Tool mapping files stitch together mapping JSON from the
-                main and base template objects using a parsed "tool" name.
-            skeleton: The JSON mappings file does not have a version.
+                main and skeleton templates using a parsed "tool" name.
+            skeleton: A versionless skeleton mappings file to merge with the tool
+                mappings.
         """
         self.prefix = prefix
-        self.mappings = JsonFile(mappings) if mappings else None
-        self.settings = JsonFile(settings) if settings else None
-        if mappings:
-            if tool:
-                self.key = tool
-                m = self._fpat.match(mappings.name)
-                self.name = m.group("toolname")
-            else:
-                self.name = mappings.stem if mappings else None
-                self.key = self.name
-            self.index_info = self.index_patterns[self.key] if not skeleton else None
+        self.settings = settings
+        if tool:
+            self.mappings = JsonToolFile(mappings)
+            self.key = tool
+            m = self._fpat.match(mappings.name)
+            self.name = m.group("toolname")
         else:
-            # If this is just a holder for a shared settings file, there's not
-            # much else we can do with it.
-            self.key = None
-            self.name = None
-            self.index_info = None
-        self.base = base
+            self.mappings = JsonFile(mappings)
+            self.name = mappings.stem
+            self.key = self.name
+        self.index_info = self.index_patterns[self.key]
         self.version = None
         self.tool = tool
         self.skeleton = skeleton
-
-        # FIXME: We want to defer loading the JSON until we've checked the
-        # modification timestamp against the template DB, because we don't
-        # need that overhead (and we can load the version and mappings from
-        # the DB). I haven't yet integrated with the DB, and we don't have
-        # the index version until we've loaded, so do it now. (The JsonFile
-        # load method is idempotent, so this is OK.)
-        self.load()
-
-    def _fetch_mapping(self):
-        """
-        Fetch the mapping JSON data from the given file.
-
-        This also extracts a metadata version from the mapping file.
-
-        Raises:
-            MappingFileError: Mapping file doesn't contain proper version
-        """
-        if self.mappings:
-            self.mappings.load()
-            if not self.skeleton:
-                try:
-                    self.version = self.mappings.json["_meta"]["version"]
-                except KeyError:
-                    raise MappingFileError(
-                        "{} mapping missing _meta field in {}".format(
-                            self.name, self.mappings.file
-                        )
-                    )
+        self.loaded = False
+        self.resolve()
 
     def load(self):
         """
         Load the associated JSON files into memory; including both the "main"
-        mapping file and, if specified, the "base" mapping file, which provides
-        a skeleton for a set of tool template mappings.
+        mapping file, the settings file, and, if specified, a "skeleton"
+        mapping file which provides a common base for a set of tool mappings.
+
+        Expand templates to create all the information necessary to register a
+        document template with Elasticsearch.
+
+        Once this method returns, the body() method can be called to return
+        the full Elasticsearch JSON payload necessary to register a document
+        template and its index pattern.
         """
-        # Make sure the base template is loaded first
-        if self.base:
-            self.base.load()
-        self._fetch_mapping()
-        if self.settings:
-            self.settings.load()
-        elif self.base:
-            self.settings = self.base.settings
-        if self.version:
-            idxver = self.version
-            ip = self.index_info
-            self.idxname = ip["idxname"].format(tool=self.name)
-            self.template_name = ip["template_name"].format(
-                prefix=self.prefix, version=idxver, idxname=self.idxname
+        # Don't go further if we've already loaded and processed
+        if self.loaded:
+            return
+        self.mappings.load()
+        self.version = self.mappings.get_version()
+        if self.skeleton:
+            self.skeleton.load()
+            self.mappings.merge(self.name, self.skeleton)
+        self.settings.load()
+        idxver = self.version
+        ip = self.index_info
+        self.idxname = ip["idxname"].format(tool=self.name)
+        self.template_name = ip["template_name"].format(
+            prefix=self.prefix, version=idxver, idxname=self.idxname
+        )
+        self.index_pattern = ip["template_pat"].format(
+            prefix=self.prefix, version=idxver, idxname=self.idxname
+        )
+        # Add a standard "authorization" sub-document into the document
+        # template if this document type is "owned" by a Pbench user.
+        if ip["owned"]:
+            self.add_mapping(
+                "authorization",
+                {
+                    "properties": {
+                        "owner": {"type": "keyword"},
+                        "access": {"type": "keyword"},
+                    }
+                },
             )
-            self.index_pattern = ip["template_pat"].format(
-                prefix=self.prefix, version=idxver, idxname=self.idxname
-            )
+        self.loaded = True
 
     def add_mapping(self, name: str, body: Dict[AnyStr, Any]):
         """
@@ -272,45 +350,48 @@ class TemplateFile:
 
     def resolve(self):
         """
-        Expand templates to create all the information necessary to register a
-        document template with Elasticsearch.
+        In the initial implementation, this just loads the template files.
 
-        Some templates share settings JSON files, and the tool templates are
-        generated from a skeleton/base and tool "fragment"; all of this logic
-        is managed here.
-
-        Once this method returns, the body() method can be called to return
-        the full Elasticsearch JSON payload necessary to register a document
-        template and its index pattern.
+        Placeholder: this will check the template DB and decide whether we
+        need to load the JSON files from disk based on modification dates.
         """
         self.load()
 
-        # FIXME: It's ugly reaching into the JsonFile object from here; this
-        # ought to be refactored into JsonFile somehow.
-        if self.tool:
-            tool_mapping = copy.deepcopy(self.base.mappings.json)
+    def generate_index_name(self, source, toolname=None):
+        """
+        Return a fully formed index name given its template, prefix, source
+        data (for an @timestamp field) and an optional tool name.
 
-            # This is ugly: we get the version from the tool-specific overlay;
-            # but that becomes a subdocument of the skeleton, and we need the
-            # version there. So we delete from one and create in the other.
-            del self.mappings.json["_meta"]
-            tool_mapping["_meta"] = dict(version=self.version)
-            sub_map = self.mappings.json
-            self.mappings.json = tool_mapping
-            self.add_mapping(self.name, sub_map)
+        Args:
 
-        # Add a standard "authorization" sub-document into the document
-        # template if this document type is "owned" by a Pbench user.
-        if self.index_info["owned"]:
-            self.add_mapping(
-                "authorization",
-                {
-                    "properties": {
-                        "owner": {"type": "keyword"},
-                        "access": {"type": "keyword"},
-                    }
-                },
+        Raises:
+            TemplateError: A problem with the index template descriptor.
+            BadDate: A problem decoding the date from the source document.
+
+        Returns:
+            The Elasticsearch index into which the source document will be indexed.
+        """
+        version = self.version
+        idxname = self.idxname
+        index_template = self.index_info["template"]
+
+        try:
+            ts_val = source["@timestamp"]
+        except KeyError:
+            raise BadDate(f"missing @timestamp in a source document: {source!r}")
+        except TypeError as e:
+            raise JsonFileError(
+                f"Failed to generate index name, {e}, source: {source!r}"
             )
+        year, month, day = ts_val.split("T", 1)[0].split("-")[0:3]
+        return index_template.format(
+            prefix=self.prefix,
+            version=version,
+            idxname=idxname,
+            year=year,
+            month=month,
+            day=day,
+        )
 
     def body(self) -> Dict[AnyStr, Any]:
         """
@@ -354,63 +435,53 @@ class PbenchTemplates:
             TemplateFile(
                 prefix=idx_prefix,
                 mappings=mapping_dir / "server-reports.json",
-                settings=setting_dir / "server-reports.json",
+                settings=JsonFile(setting_dir / "server-reports.json"),
             )
         )
 
-        run_settings = TemplateFile(settings=setting_dir / "run.json")
+        run_settings = JsonFile(setting_dir / "run.json")
         for mapping_fn in mapping_dir.glob("run*.json"):
             self.add_template(
                 TemplateFile(
                     prefix=idx_prefix,
                     mappings=mapping_dir / mapping_fn,
-                    base=run_settings,
+                    settings=run_settings,
                 )
             )
 
-        result_settings = TemplateFile(
-            prefix=idx_prefix, settings=setting_dir / "result-data.json"
-        )
+        result_settings = JsonFile(setting_dir / "result-data.json")
         for mapping_fn in mapping_dir.glob("result-data*.json"):
             self.add_template(
                 TemplateFile(
                     prefix=idx_prefix,
                     mappings=mapping_dir / mapping_fn,
-                    base=result_settings,
+                    settings=result_settings,
                 )
             )
 
-        skeleton = TemplateFile(
-            prefix=idx_prefix,
-            mappings=mapping_dir / "tool-data-skel.json",
-            settings=setting_dir / "tool-data.json",
-            skeleton=True,
-        )
+        skeleton = JsonFile(mapping_dir / "tool-data-skel.json")
+        tool_settings = JsonFile(setting_dir / "tool-data.json")
         for mapping_fn in mapping_dir.glob("tool-data-frag-*.json"):
             self.add_template(
                 TemplateFile(
                     prefix=idx_prefix,
                     mappings=mapping_dir / mapping_fn,
-                    base=skeleton,
+                    settings=tool_settings,
+                    skeleton=skeleton,
                     tool="tool-data",
                 )
             )
-
-        # TODO: We want to compare the JSON file modification dates against
-        # the DB to decide which to resolve and update; for now, we retain
-        # the original behavior of resolving them all unconditionally.
         self.resolve()
 
     def add_template(self, template: TemplateFile):
         self.templates[template.idxname] = template
 
     def resolve(self):
-        # TODO: template DB integration will look for templates that don't yet
-        # exist in the DB, or for which the DB has older modification time
-        # stamps. Only those will be loaded, resolved, and then checked for
-        # uploading to Elasticsearch. (It probably also makes sense to defer
-        # that extra work out of the constructor.)
-
+        """
+        Using the Template database table and the information gathered during
+        PbenchTemplate construction, decide which templates we need to load
+        and resolve from disk, and which we can load from the database.
+        """
         for template in self.templates.values():
             template.resolve()
 
@@ -515,12 +586,6 @@ class PbenchTemplates:
         Return a fully formed index name given its template, prefix, source
         data (for an @timestamp field) and an optional tool name.
         """
-        try:
-            index_template = TemplateFile.index_patterns[template_name]["template"]
-        except KeyError as e:
-            self.counters["invalid_template_name"] += 1
-            raise Exception("Invalid template name, '{}': {}".format(template_name, e))
-
         for t in self.templates.values():
             if t.key == template_name and (toolname is None or t.name == toolname):
                 template = t
@@ -531,23 +596,11 @@ class PbenchTemplates:
                 "Invalid template name, '{}': {}".format(template_name, template_name)
             )
 
-        version = template.version
-        idxname = template.idxname
-
         try:
-            ts_val = source["@timestamp"]
-        except KeyError:
+            return template.generate_index_name(source, toolname)
+        except BadDate:
             self.counters["ts_missing_at_timestamp"] += 1
-            raise BadDate(f"missing @timestamp in a source document: {source!r}")
-        except TypeError as e:
+            raise
+        except JsonFileError:
             self.counters["bad_source"] += 1
-            raise Exception(f"Failed to generate index name, {e}, source: {source!r}")
-        year, month, day = ts_val.split("T", 1)[0].split("-")[0:3]
-        return index_template.format(
-            prefix=self.idx_prefix,
-            version=version,
-            idxname=idxname,
-            year=year,
-            month=month,
-            day=day,
-        )
+            raise
