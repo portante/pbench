@@ -130,7 +130,6 @@ class Template(Database.Base):
             raise TemplateSqlError("finding", name) from e
 
         if template is None:
-            Template.logger.warning("{} not found", name)
             raise TemplateNotFound(name)
         return template
 

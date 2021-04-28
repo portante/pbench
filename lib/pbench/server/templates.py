@@ -17,6 +17,7 @@ from pbench.common.exceptions import (
     TemplateError,
 )
 from pbench.server import tstos
+from pbench.server.database.models.template import Template, TemplateNotFound
 
 
 class JsonFile:
@@ -25,7 +26,7 @@ class JsonFile:
     mapping file.
     """
 
-    def __init__(self, file: Path):
+    def __init__(self, file: Path = None):
         """
         Initialize a JSON file object by resolving the file name and reading
         the modification date.
@@ -33,9 +34,16 @@ class JsonFile:
         Args:
             file: JSON file path
         """
-        self.file = file.resolve(strict=True)
-        self.modified = datetime.fromtimestamp(self.file.stat().st_mtime)
-        self.json = None
+        if file:
+            self.file = file.resolve(strict=True)
+            self.modified = datetime.fromtimestamp(self.file.stat().st_mtime)
+            self.json = None
+
+    @staticmethod
+    def raw_json(json: Dict[AnyStr, Any]) -> "JsonFile":
+        new = JsonFile()
+        new.json = json
+        return new
 
     def get_version(self) -> str:
         """
@@ -283,9 +291,14 @@ class TemplateFile:
             self.name = mappings.stem
             self.key = self.name
         self.index_info = self.index_patterns[self.key]
+        self.idxname = self.index_info["idxname"].format(tool=self.name)
         self.version = None
         self.tool = tool
         self.skeleton = skeleton
+        if skeleton:
+            self.modified = max(self.mappings.modified, self.skeleton.modified)
+        else:
+            self.modified = self.mappings.modified
         self.loaded = False
         self.resolve()
 
@@ -313,7 +326,6 @@ class TemplateFile:
         self.settings.load()
         idxver = self.version
         ip = self.index_info
-        self.idxname = ip["idxname"].format(tool=self.name)
         self.template_name = ip["template_name"].format(
             prefix=self.prefix, version=idxver, idxname=self.idxname
         )
@@ -348,14 +360,58 @@ class TemplateFile:
         """
         self.mappings.add_mapping(name, body)
 
+    def update(self, template: Template):
+        """
+        Update the template object from the database model object.
+
+        Args:
+            template: DB Template instance
+        """
+        self.modified = template.mtime
+        self.version = template.version
+        self.mappings = JsonFile.raw_json(template.mappings)
+        self.settings = JsonFile.raw_json(template.settings)
+        self.template_name = template.template_name
+        self.index_pattern = template.index_template
+
     def resolve(self):
         """
-        In the initial implementation, this just loads the template files.
-
-        Placeholder: this will check the template DB and decide whether we
-        need to load the JSON files from disk based on modification dates.
+        Check the on-disk template mapping files' modification dates against
+        the templates DB. Only if the template's base index name doesn't exist
+        in the DB, or if the DB object is older than the on-disk template do
+        we load the mapping files from disk.
         """
+        try:
+            template = Template.find(self.name)
+        except TemplateNotFound:
+            template = None
+
+        # If we found a match that's newer, use it
+        if template and template.mtime >= self.modified:
+            self.update(template)
+            return
+
+        # If the DB version is missing, or older than the on-disk JSON, we need
+        # to fully resolve the mapping files. If we found an older DB object,
+        # update it with the new data, otherwise we create a new Template object.
         self.load()
+        if not template:
+            template = Template(
+                name=self.name,
+                template_name=self.template_name,
+                file=str(self.mappings.file),
+                index_template=self.index_pattern,
+                settings=self.settings.json,
+                mappings=self.mappings.json,
+                version=self.version,
+            )
+            template.add()
+        else:
+            template.version = self.version
+            template.mappings = self.mappings.json
+            template.settings = self.settings.json
+            template.mtime = self.modified
+            template.update()
 
     def generate_index_name(self, source, toolname=None):
         """
