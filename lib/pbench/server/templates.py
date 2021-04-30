@@ -32,15 +32,27 @@ class JsonFile:
         the modification date.
 
         Args:
-            file: JSON file path
+            file: JSON file path. Defaults to None to allow initializing an
+                object to store DB query results rather than loading from a
+                file.
         """
         if file:
             self.file = file.resolve(strict=True)
             self.modified = datetime.fromtimestamp(self.file.stat().st_mtime)
-            self.json = None
+        else:
+            self.file = None
+            self.modified = None
+        self.json = None
 
     @staticmethod
     def raw_json(json: Dict[AnyStr, Any]) -> "JsonFile":
+        """
+        An alternate constructor that can be loaded directly with a JSON
+        document in order to capture the data from a Template DB object.
+
+        Returns:
+            An instance of JsonFile
+        """
         new = JsonFile()
         new.json = json
         return new
@@ -64,24 +76,28 @@ class JsonFile:
             raise MappingFileError(f"mapping missing {e} in {self.file}: {self.json}")
         return version
 
-    def load(self):
+    def load(self) -> bool:
         """
         Simple wrapper function to load a JSON object from the object's file,
         raising a JsonFileError when bad JSON data is encountered.
 
         Raises:
             JsonFileError: Improperly formatted JSON
+
+        Returns:
+            True if the file was loaded, False if it had already been loaded
         """
 
         # Don't load the file again if we've already done it
         if self.json:
-            return
+            return False
         with self.file.open(mode="r") as jsonfp:
             try:
                 data = json.load(jsonfp)
             except ValueError as err:
                 raise JsonFileError("{}: {}".format(self.file, err))
         self.json = data
+        return True
 
     def merge(self, name: str, base: "JsonFile"):
         """
@@ -113,11 +129,11 @@ class JsonFile:
 
 class JsonToolFile(JsonFile):
     """
-    Extend the JSON template file handling to provide merging JSON
-    tool templates with a base skeleton.
+    Extend the JSON template file handling to provide the capability of merging
+    JSON tool templates with a base skeleton.
     """
 
-    def load(self):
+    def load(self) -> bool:
         """
         Tool mapping files define a sub-document in the Elasticsearch template
         specific to the tool (e.g., "iostat") which exists within a common
@@ -126,10 +142,15 @@ class JsonToolFile(JsonFile):
 
         Here we extend the JsonFile load method to remove the sub-document
         metadata and save it to be spliced into the base document by merge.
+
+        Returns:
+            True if the file was loaded, False if it had already been loaded
         """
-        super().load()
-        self.meta = self.json["_meta"]
-        del self.json["_meta"]
+        loaded = super().load()
+        if loaded:
+            self.meta = self.json["_meta"]
+            del self.json["_meta"]
+        return loaded
 
     def get_version(self) -> str:
         """
@@ -174,20 +195,15 @@ class JsonToolFile(JsonFile):
 class TemplateFile:
     """
     Describes an Elasticsearch template. This may include both mapping file
-    and settings file, as a complete template. More often, templates are
-    built from a "base" and an overlay, with the base containing a settings
-    file shared by several templates, and optionally also a base mappings
-    file from which several templates are built.
+    and settings file, as a complete template. Tool templates are build from a
+    "base" skeleton and a tool-specific overlay, with a shared JsonFile object
+    describing the common framework and a JsonToolFile providing the version
+    and tool-specific properties.
 
-    This doesn't load the files, but does fetch the modification timestamp of
-    the mapping file, which will be used to determine whether a version already
-    captured in the database is up to date. (If not, the new version will be
-    loaded and the DB will be updated.)
-
-    NOTE/FIXME: The type hint on the "base" link to another TemplateFile object
-    is a forward reference since the type has not been fully defined. This will
-    be a default feature of Python 3.10; in the meantime, the quoted (deferred)
-    type hint works.
+    Loading the JSON files from disk is deferred to the resolve() method; this
+    will check modification dates against the Template database. We can use the
+    DB cached data unless the on-disk JSON is newer, in which case we'll fully
+    resolve it and update the DB.
     """
 
     index_patterns = {
@@ -274,10 +290,10 @@ class TemplateFile:
             prefix: Pbench index prefix string
             mappings: JSON document description. Defaults to None.
             settings: JSON index settings. Defaults to None.
-            tool: Tool mapping files stitch together mapping JSON from the
-                main and skeleton templates using a parsed "tool" name.
             skeleton: A versionless skeleton mappings file to merge with the tool
                 mappings.
+            tool: Tool mapping files stitch together mapping JSON from the
+                main and skeleton templates using a parsed "tool" name.
         """
         self.prefix = prefix
         self.settings = settings
@@ -300,7 +316,6 @@ class TemplateFile:
         else:
             self.modified = self.mappings.modified
         self.loaded = False
-        self.resolve()
 
     def load(self):
         """
@@ -356,7 +371,7 @@ class TemplateFile:
 
         Raises:
             KeyError: the loaded template body doesn't have the expected
-                "mappings" or "properties" keys.
+                "properties" key.
         """
         self.mappings.add_mapping(name, body)
 
@@ -386,7 +401,7 @@ class TemplateFile:
         except TemplateNotFound:
             template = None
 
-        # If we found a match that's newer, use it
+        # If we found a match that's not older, use it
         if template and template.mtime >= self.modified:
             self.update(template)
             return
@@ -465,8 +480,9 @@ class TemplateFile:
 
 
 class PbenchTemplates:
-    """Encapsulation of methods for loading / working with all the Pbench
-    templates for Elasticsearch.
+    """
+    Encapsulation of methods for loading / working with all the Pbench
+    templates needed to define our Elasticsearch document schema.
     """
 
     def __init__(self, basepath, idx_prefix, logger, known_tool_handlers=None, _dbg=0):

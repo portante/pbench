@@ -1,8 +1,4 @@
 import datetime
-import os
-from pathlib import Path
-from posix import stat_result
-from stat import ST_MTIME
 import pytest
 
 from pbench.server.database.models.template import (
@@ -11,41 +7,8 @@ from pbench.server.database.models.template import (
 )
 
 
-@pytest.fixture(autouse=True)
-def fake_mtime(monkeypatch):
-    """
-    Template's init event listener provides the file's modification date to
-    support template version control. For unit testing, mock the stat results
-    to appear at a fixed time.
-
-    Args:
-        monkeypatch ([type]): [description]
-    """
-
-    def fake_stat(file: str):
-        """
-        Create a real stat_result using an actual file, but change the st_mtime
-        to a known value before returning it.
-
-        Args:
-            file: filename (not used)
-
-        Returns:
-            mocked stat_results
-        """
-        s = os.stat(".")
-        t = int(datetime.datetime(2021, 1, 29, 0, 0, 0).timestamp())
-        f = list(s)
-        f[ST_MTIME] = t
-        return stat_result(f)
-
-    with monkeypatch.context() as m:
-        m.setattr(Path, "stat", fake_stat)
-        yield
-
-
 class TestTemplate:
-    def test_construct(self):
+    def test_construct(self, fake_mtime, db_session):
         """ Test dataset contructor
         """
         template = Template(
@@ -62,11 +25,11 @@ class TestTemplate:
         assert template.mtime == datetime.datetime(2021, 1, 29, 0, 0, 0)
         assert "run: run.{year}-{month}" == str(template)
 
-    def test_find_exists(self):
+    def test_find_exists(self, fake_mtime, db_session):
         """ Test that we can find a template
         """
         template1 = Template(
-            name="run-toc",
+            name="run",
             template_name="toc",
             file="run-toc.json",
             index_template="run-toc.{year}-{month}",
@@ -76,11 +39,11 @@ class TestTemplate:
         )
         template1.add()
 
-        template2 = Template.find(name="run-toc")
+        template2 = Template.find(name="run")
         assert template2.name == template1.name
         assert template2.id is template1.id
 
-    def test_find_none(self):
+    def test_find_none(self, fake_mtime, db_session):
         """ Test expected failure when we try to find a template that
         does not exist.
         """
