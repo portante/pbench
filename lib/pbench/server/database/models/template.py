@@ -64,11 +64,13 @@ class Template(Database.Base):
 
     Columns:
         id              Generated unique ID of table row
-        name            Base name of index (e.g., "run")
+        name            Index name key (e.g., "fio")
+        idxname         Base index name (e.g., "tool-data-fio")
         template_name   The Elasticsearch template name
         file            The source JSON mapping file
         mtime           Template file modification timestamp
-        index_template  The template for the Elasticsearch index name
+        template_pattern The template for the Elasticsearch index name
+        index_template  The full index name template "p.v.i.y-m[-d]"
         settings        The JSON settings payload
         mappings        The JSON mappings payload
         version         The template version metadata
@@ -78,10 +80,12 @@ class Template(Database.Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(255), unique=True, nullable=False)
+    idxname = Column(String(255), unique=True, nullable=False)
     template_name = Column(String(255), unique=True, nullable=False)
     file = Column(String(255), unique=False, nullable=False, default=None)
     mtime = Column(DateTime, unique=False, nullable=False)
-    index_template = Column(String(255), unique=False, nullable=False)
+    template_pattern = Column(String(255), unique=False, nullable=False)
+    index_template = Column(String(225), unique=False, nullable=False)
     settings = Column(JSON, unique=False, nullable=False)
     mappings = Column(JSON, unique=False, nullable=False)
     version = Column(String(255), unique=False, nullable=False)

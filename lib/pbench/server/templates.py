@@ -347,6 +347,8 @@ class TemplateFile:
         self.index_pattern = ip["template_pat"].format(
             prefix=self.prefix, version=idxver, idxname=self.idxname
         )
+        self.index_template = ip["template"]
+
         # Add a standard "authorization" sub-document into the document
         # template if this document type is "owned" by a Pbench user.
         if ip["owned"]:
@@ -387,7 +389,9 @@ class TemplateFile:
         self.mappings = JsonFile.raw_json(template.mappings)
         self.settings = JsonFile.raw_json(template.settings)
         self.template_name = template.template_name
-        self.index_pattern = template.index_template
+        self.index_pattern = template.template_pattern
+        self.index_template = template.index_template
+        self.idxname = template.idxname
 
     def resolve(self):
         """
@@ -413,9 +417,11 @@ class TemplateFile:
         if not template:
             template = Template(
                 name=self.name,
+                idxname=self.idxname,
                 template_name=self.template_name,
                 file=str(self.mappings.file),
-                index_template=self.index_pattern,
+                template_pattern=self.index_pattern,
+                index_template=self.index_template,
                 settings=self.settings.json,
                 mappings=self.mappings.json,
                 version=self.version,
@@ -444,7 +450,6 @@ class TemplateFile:
         """
         version = self.version
         idxname = self.idxname
-        index_template = self.index_info["template"]
 
         try:
             ts_val = source["@timestamp"]
@@ -455,7 +460,7 @@ class TemplateFile:
                 f"Failed to generate index name, {e}, source: {source!r}"
             )
         year, month, day = ts_val.split("T", 1)[0].split("-")[0:3]
-        return index_template.format(
+        return self.index_template.format(
             prefix=self.prefix,
             version=version,
             idxname=idxname,

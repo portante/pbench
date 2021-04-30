@@ -13,9 +13,11 @@ class TestTemplate:
         """
         template = Template(
             name="run",
+            idxname="run-data",
             template_name="tname",
             file="run.json",
-            index_template="run.{year}-{month}",
+            template_pattern="drb.v1.run.*",
+            index_template="drb.v1.run.{year}-{month}",
             settings={"none": False},
             mappings={"properties": None},
             version=5,
@@ -23,16 +25,18 @@ class TestTemplate:
         template.add()
         assert template.name == "run"
         assert template.mtime == datetime.datetime(2021, 1, 29, 0, 0, 0)
-        assert "run: run.{year}-{month}" == str(template)
+        assert "run: drb.v1.run.{year}-{month}" == str(template)
 
     def test_find_exists(self, fake_mtime, db_session):
         """ Test that we can find a template
         """
         template1 = Template(
             name="run",
-            template_name="toc",
+            idxname="run-data",
+            template_name="run",
             file="run-toc.json",
-            index_template="run-toc.{year}-{month}",
+            template_pattern="drb.v2.run-toc.*",
+            index_template="drb.v2.run-toc.{year}-{month}",
             settings={"none": False},
             mappings={"properties": None},
             version=5,

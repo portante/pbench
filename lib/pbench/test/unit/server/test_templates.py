@@ -78,7 +78,6 @@ class TestJsonFile:
                 return io.StringIO('{"_meta": {"version": 6}}\n')
 
             m.setattr(Path, "open", fake_open)
-            # m.setattr(Path, "open", lambda self, mode : io.StringIO('{"_meta": {"version": 6}}\n'))
             json.load()
         assert json.get_version() == 6
         assert json.json == {"_meta": {"version": 6}}
@@ -106,7 +105,6 @@ class TestJsonToolFile:
                 return io.StringIO('{"_meta": {"version": 6}}\n')
 
             m.setattr(Path, "open", fake_open)
-            # m.setattr(Path, "open", lambda self, mode : io.StringIO('{"_meta": {"version": 6}}\n'))
             json.load()
         assert json.get_version() == 6
 
@@ -125,7 +123,6 @@ class TestJsonToolFile:
                 )
 
             m.setattr(Path, "open", fake_open)
-            # m.setattr(Path, "open", lambda self, mode : io.StringIO('{"_meta": {"version": 6}, {"iostat": {"run": "far and fast"}}}\n'))
             json.load()
         with monkeypatch.context() as m:
 
@@ -133,7 +130,6 @@ class TestJsonToolFile:
                 return io.StringIO('{"properties": {"@meta": "at meta friend"}}')
 
             m.setattr(Path, "open", fake_open)
-            # m.setattr(Path, "open", lambda self, mode : io.StringIO('{"properties": {"@meta": "at meta friend"}}'))
             base.load()
         json.merge("tool", base)
         assert json.get_version() == 6

@@ -10,6 +10,7 @@ from stat import ST_MTIME
 from pbench.server.api import create_app, get_server_config
 from pbench.server.api.auth import Auth
 from pbench.server.database.database import Database
+from pbench.server.database.models.template import Template
 
 server_cfg_tmpl = """[DEFAULT]
 install-dir = {TMP}/opt/pbench-server
@@ -182,4 +183,24 @@ def fake_mtime(monkeypatch):
 
     with monkeypatch.context() as m:
         m.setattr(Path, "stat", fake_stat)
+        yield
+
+
+@pytest.fixture()
+def find_template(monkeypatch, fake_mtime):
+    def fake_find(name: str) -> Template:
+        return Template(
+            name="run",
+            idxname="run-data",
+            template_name="unit-test.v6.run-data",
+            file="run.json",
+            template_pattern="unit-test.v6.run-data.*",
+            index_template="unit-test.v6.run-data.{year}-{month}",
+            settings={"none": False},
+            mappings={"properties": None},
+            version=5,
+        )
+
+    with monkeypatch.context() as m:
+        m.setattr(Template, "find", fake_find)
         yield
