@@ -161,7 +161,7 @@ def fake_mtime(monkeypatch):
     to appear at a fixed time.
 
     Args:
-        monkeypatch ([type]): [description]
+        monkeypatch: patch fixture
     """
 
     def fake_stat(file: str):
@@ -188,6 +188,15 @@ def fake_mtime(monkeypatch):
 
 @pytest.fixture()
 def find_template(monkeypatch, fake_mtime):
+    """
+    Mock a Template class find call to return an object without requiring a DB
+    query.
+
+    Args:
+        monkeypatch: patching fixture
+        fake_mtime: fake file modification time on init
+    """
+
     def fake_find(name: str) -> Template:
         return Template(
             name="run",

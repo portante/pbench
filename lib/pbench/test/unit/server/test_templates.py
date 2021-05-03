@@ -64,13 +64,24 @@ def fake_open(monkeypatch, request):
 
 
 class TestJsonFile:
+    """
+    Tests for the JsonFile class
+    """
+
     def test_json_file(self, fake_resolve, fake_mtime):
+        """
+        Test a simple object construction
+        """
         json = JsonFile(Path("mapping.json"))
         assert str(json.file) == "/fake/path/mapping.json"
         assert json.json is None
         assert json.modified == datetime.datetime(2021, 1, 29, 0, 0, 0)
 
     def test_json_load(self, monkeypatch, fake_resolve, fake_mtime):
+        """
+        Test "loading" a JsonFile object from a fake JSON file to verify that
+        the JSON content and version are processed properly.
+        """
         json = JsonFile(Path("mapping.json"))
         with monkeypatch.context() as m:
 
@@ -83,6 +94,10 @@ class TestJsonFile:
         assert json.json == {"_meta": {"version": 6}}
 
     def test_json_add(self):
+        """
+        Test that JSON "mapping" properties file can be patched into the main
+        JSON document.
+        """
         expected = {"properties": {"bar": "string"}}
         json = JsonFile.raw_json(expected)
         assert json.json == expected
@@ -91,13 +106,26 @@ class TestJsonFile:
 
 
 class TestJsonToolFile:
+    """
+    Test the JsonToolFile subclass.
+    """
+
     def test_json_file(self, fake_resolve, fake_mtime):
+        """
+        Test a simple object construction
+        """
         json = JsonToolFile(Path("mapping.json"))
         assert str(json.file) == "/fake/path/mapping.json"
         assert json.json is None
         assert json.modified == datetime.datetime(2021, 1, 29, 0, 0, 0)
 
     def test_json_load(self, fake_resolve, fake_mtime, monkeypatch):
+        """
+        Test "loading" a JsonToolFile object from a fake JSON file to verify
+        that the JSON content and version are processed properly. Unlike the
+        base class, this sequesters the "_meta" version information to be
+        patched into a merged skeleton/tool document.
+        """
         json = JsonToolFile(Path("mapping.json"))
         with monkeypatch.context() as m:
 
@@ -113,6 +141,9 @@ class TestJsonToolFile:
         assert json.meta == {"version": 6}
 
     def test_json_merge(self, fake_resolve, fake_mtime, monkeypatch):
+        """
+        Test merging a tool properties file with a skeleton file
+        """
         json = JsonToolFile(Path("mapping.json"))
         base = JsonFile(Path("tool.json"))
         with monkeypatch.context() as m:

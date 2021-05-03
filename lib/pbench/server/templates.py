@@ -122,7 +122,7 @@ class JsonFile:
 
         Raises:
             KeyError: the loaded template body doesn't have the expected
-                "mappings" or "properties" keys.
+                "properties" key.
         """
         self.json["properties"][name] = body
 
@@ -195,7 +195,7 @@ class JsonToolFile(JsonFile):
 class TemplateFile:
     """
     Describes an Elasticsearch template. This may include both mapping file
-    and settings file, as a complete template. Tool templates are build from a
+    and settings file, as a complete template. Tool templates are built from a
     "base" skeleton and a tool-specific overlay, with a shared JsonFile object
     describing the common framework and a JsonToolFile providing the version
     and tool-specific properties.
@@ -206,6 +206,23 @@ class TemplateFile:
     resolve it and update the DB.
     """
 
+    # Internal fixed "pattern" information for processing index templates; each
+    # of these defines properties associated with a particular Elasticsearch
+    # index and document template pair. The exception is the final "tool-data"
+    # element which describes a set of index/template documents, one for each
+    # tool-specific document. (E.g., iostat, pidstat.)
+    #
+    # Properties:
+    #     (key):            The internal reference name.
+    #     idxname:          The root name of the Elasticsearch index
+    #     template_name:    The document template name to be registered with
+    #                       Elasticsearch
+    #     template_pat:     The index name to be registered with Elasticsearch
+    #     template:         The format of Elasticsearch's generated timeseries
+    #                       indices associate with the "template_pat"
+    #     owned             Documents using this template are "owned" by a user
+    #     desc              A description string reported when templates are
+    #                       dumped by the pbench-index command.
     index_patterns = {
         "result-data": {
             "idxname": "result-data",
@@ -267,6 +284,9 @@ class TemplateFile:
         },
     }
 
+    # REGEX pattern to pull the tool name out of the standard file name pattern
+    # for tool mapping files. The "toolname" group becomes the internal name of
+    # the template and the DB key.
     _fpat = re.compile(r"tool-data-frag-(?P<toolname>.+)\.json")
 
     def __init__(
@@ -379,7 +399,8 @@ class TemplateFile:
 
     def update(self, template: Template):
         """
-        Update the template object from the database model object.
+        Update the template object from a database model object rather than
+        loading and processing mapping and setting files from disk.
 
         Args:
             template: DB Template instance
@@ -551,6 +572,12 @@ class PbenchTemplates:
         self.resolve()
 
     def add_template(self, template: TemplateFile):
+        """
+        Add a template to the mapping dictionary by the proper key.
+
+        Args:
+            template: Template document
+        """
         self.templates[template.idxname] = template
 
     def resolve(self):
@@ -563,6 +590,14 @@ class PbenchTemplates:
             template.resolve()
 
     def dump_idx_patterns(self):
+        """
+        List the registered index template patterns to the user.
+
+        NOTE: This doesn't do a simple traversal of the templates dictionary
+        in order to retain an output style identical to the previous, with the
+        generic "tool-data" description appearing only once following the last
+        tool data pattern.
+        """
         patterns = TemplateFile.index_patterns
         pattern_names = [idx for idx in patterns]
         pattern_names.sort()
@@ -602,6 +637,9 @@ class PbenchTemplates:
         sys.stdout.flush()
 
     def dump_templates(self):
+        """
+        List all of the registered template documents
+        """
         templates = {t.template_name: t for t in self.templates.values()}
         template_names = [name for name in templates]
         template_names.sort()
@@ -614,7 +652,9 @@ class PbenchTemplates:
         sys.stdout.flush()
 
     def update_templates(self, es, target_name=None):
-        """Push the various Elasticsearch index templates required by pbench.
+        """
+        Register with Elasticsearch the set of index templates used by the
+        Pbench server.
         """
         if target_name is not None:
             idxname = TemplateFile.index_patterns[target_name]["idxname"]
@@ -633,10 +673,7 @@ class PbenchTemplates:
                 continue
             try:
                 _beg, _end, _retries, _stat = pyesbulk.put_template(
-                    es,
-                    name,
-                    "pbench-{}".format(template.name),  # NOT USED ES7
-                    template.body(),
+                    es, name, "pbench-{}".format(template.name), template.body(),
                 )
             except Exception as e:
                 self.counters["put_template_failures"] += 1
