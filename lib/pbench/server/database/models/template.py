@@ -9,9 +9,8 @@ from pbench.server.database.database import Database
 
 class TemplateError(Exception):
     """
-    TemplateError This is a base class for errors reported by the
-                Template class. It is never raised directly, but
-                may be used in "except" clauses.
+    This is a base class for errors reported by the Template class. It is
+    never raised directly, but may be used in "except" clauses.
     """
 
     pass
@@ -19,43 +18,68 @@ class TemplateError(Exception):
 
 class TemplateSqlError(TemplateError):
     """
-    TemplateSqlError SQLAlchemy errors reported through Template operations.
+    SQLAlchemy errors reported through Template operations.
 
     The exception will identify the base name of the template index,
     along with the operation being attempted; the __cause__ will specify the
     original SQLAlchemy exception.
     """
 
-    def __init__(self, operation, name):
+    def __init__(self, operation: str, name: str):
         self.operation = operation
         self.name = name
 
-    def __str__(self):
-        return f"Error {self.operation} index {self.name}"
+    def __str__(self) -> str:
+        return f"Error {self.operation} index {self.name!r}"
+
+
+class TemplateFileMissing(TemplateError):
+    """
+    Template requires a file name.
+    """
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def __str__(self) -> str:
+        return f"Template {self.name!r} is missing required file"
 
 
 class TemplateNotFound(TemplateError):
     """
-    TemplateNotFound Attempt to find a Template that doesn't exist.
+    Attempt to find a Template that doesn't exist.
     """
 
-    def __init__(self, name):
+    def __init__(self, name: str):
         self.name = name
 
-    def __str__(self):
-        return f"No template {self.name}"
+    def __str__(self) -> str:
+        return f"No template {self.name!r}"
 
 
 class TemplateDuplicate(TemplateError):
     """
-    TemplateDuplicate Attempt to create a Template that already exists.
+    Attempt to commit a duplicate Template.
     """
 
-    def __init__(self, name):
+    def __init__(self, name: str):
         self.name = name
 
-    def __str__(self):
-        return f"Duplicate template {self.name}"
+    def __str__(self) -> str:
+        return f"Duplicate template {self.name!r}"
+
+
+class TemplateMissingParameter(TemplateError):
+    """
+    Attempt to commit a Template with missing parameters.
+    """
+
+    def __init__(self, name: str, cause: str):
+        self.name = name
+        self.cause = cause
+
+    def __str__(self) -> str:
+        return f"Missing required parameters in {self.name!r}: {self.cause}"
 
 
 class Template(Database.Base):
@@ -82,7 +106,7 @@ class Template(Database.Base):
     name = Column(String(255), unique=True, nullable=False)
     idxname = Column(String(255), unique=True, nullable=False)
     template_name = Column(String(255), unique=True, nullable=False)
-    file = Column(String(255), unique=False, nullable=False, default=None)
+    file = Column(String(255), unique=False, nullable=False)
     mtime = Column(DateTime, unique=False, nullable=False)
     template_pattern = Column(String(255), unique=False, nullable=False)
     index_template = Column(String(225), unique=False, nullable=False)
@@ -91,9 +115,9 @@ class Template(Database.Base):
     version = Column(String(255), unique=False, nullable=False)
 
     @staticmethod
-    def create(**kwargs) -> Database.Base:
+    def create(**kwargs) -> "Template":
         """
-        create A simple factory method to construct a new Template object and
+        A simple factory method to construct a new Template object and
         add it to the database.
 
         Args:
@@ -102,18 +126,14 @@ class Template(Database.Base):
         Returns:
             A new Template object initialized with the keyword parameters.
         """
-        try:
-            template = Template(**kwargs)
-            template.add()
-        except Exception:
-            Template.logger.exception("Failed create: {}", kwargs.get("name"))
-            raise
+        template = Template(**kwargs)
+        template.add()
         return template
 
     @staticmethod
-    def find(name: str) -> Database.Base:
+    def find(name: str) -> "Template":
         """
-        find Return a Template object with the specified base name. For
+        Return a Template object with the specified base name. For
         example, find("run-data").
 
         Args:
@@ -126,20 +146,19 @@ class Template(Database.Base):
         Returns:
             Template: a template object with the specified base name
         """
-        # Make sure we have controller and name from path
         try:
             template = Database.db_session.query(Template).filter_by(name=name).first()
         except SQLAlchemyError as e:
-            Template.logger.warning("Error looking for {}", name, str(e))
-            raise TemplateSqlError("finding", name) from e
+            Template.logger.warning("Error looking for {}: {}", name, str(e))
+            raise TemplateSqlError("finding", name)
 
         if template is None:
             raise TemplateNotFound(name)
         return template
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
-        __str__ Return a string representation of the template
+        Return a string representation of the template
 
         Returns:
             string: Representation of the template
@@ -148,14 +167,25 @@ class Template(Database.Base):
 
     def add(self):
         """
-        add Add the Template object to the database
+        Add the Template object to the database
         """
         try:
             Database.db_session.add(self)
             Database.db_session.commit()
-        except IntegrityError:
-            Template.logger.exception("Duplicate template {}", self.name)
-            raise TemplateDuplicate(self.name)
+        except IntegrityError as e:
+            # Postgres engine returns (code, message) but sqlite3 engine only
+            # returns (message); so always take the last element.
+            cause = e.orig.args[-1]
+            Database.db_session.rollback()
+            if cause.find("UNIQUE constraint") != -1:
+                Template.logger.warning("Duplicate template {!r}: {}", self.name, cause)
+                raise TemplateDuplicate(self.name)
+            elif cause.find("NOT NULL constraint") != -1:
+                Template.logger.warning("Missing parameter {!r}, {}", self.name, cause)
+                raise TemplateMissingParameter(self.name, cause)
+            else:
+                Template.logger.exception("Other integrity error {}", cause)
+                raise
         except Exception:
             self.logger.exception("Can't add {} to DB", str(self))
             Database.db_session.rollback()
@@ -163,11 +193,25 @@ class Template(Database.Base):
 
     def update(self):
         """
-        update Update the database row with the modified version of the
+        Update the database row with the modified version of the
         Template object.
         """
         try:
             Database.db_session.commit()
+        except IntegrityError as e:
+            # Postgres engine returns (code, message) but sqlite3 engine only
+            # returns (message); so always take the last element.
+            cause = e.orig.args[-1]
+            Database.db_session.rollback()
+            if cause.find("UNIQUE constraint") != -1:
+                Template.logger.warning("Duplicate template {!r}: {}", self.name, cause)
+                raise TemplateDuplicate(self.name)
+            elif cause.find("NOT NULL constraint") != -1:
+                Template.logger.warning("Missing parameter {!r}, {}", self.name, cause)
+                raise TemplateMissingParameter(self.name, cause)
+            else:
+                Template.logger.exception("Other integrity error {}", cause)
+                raise
         except Exception:
             self.logger.error("Can't update {} in DB", str(self))
             Database.db_session.rollback()
@@ -177,9 +221,13 @@ class Template(Database.Base):
 @event.listens_for(Template, "init")
 def check_required(target, args, kwargs):
     """
-    Listen for an init event on Template to capture the source file's
-    modification timestamp.
+    Listen for an init event on Template to validate that a filename was
+    specified; and automatically capture the file's modification timestamp
+    if it wasn't given.
     """
+    if "file" not in kwargs:
+        raise TemplateFileMissing(kwargs["name"])
+
     if "mtime" not in kwargs:
         kwargs["mtime"] = datetime.datetime.fromtimestamp(
             Path(kwargs["file"]).stat().st_mtime

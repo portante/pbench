@@ -21,7 +21,7 @@ def fake_resolve(monkeypatch):
         Return a "full" fake file name
 
         Args:
-            file: filename
+            strict: Not used in the mock
 
         Returns:
             new Path with fake resolution
@@ -51,7 +51,7 @@ def fake_open(monkeypatch, request):
         Return an IO stream
 
         Args:
-            file: filename
+            mode: file mode (assumed to be "r")
 
         Returns:
             IO channel from string
@@ -99,10 +99,12 @@ class TestJsonFile:
         JSON document.
         """
         expected = {"properties": {"bar": "string"}}
-        json = JsonFile.raw_json(expected)
+        now = datetime.datetime.now()
+        json = JsonFile.raw_json(expected, now)
         assert json.json == expected
         json.add_mapping("iostat", {"run": "no"})
         assert json.json["properties"]["iostat"] == {"run": "no"}
+        assert json.modified == now
 
 
 class TestJsonToolFile:

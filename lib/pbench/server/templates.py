@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, AnyStr, Dict
 
 import pyesbulk
+from sqlalchemy.sql.sqltypes import JSON
 
 from pbench.common.exceptions import (
     BadDate,
@@ -17,7 +18,10 @@ from pbench.common.exceptions import (
     TemplateError,
 )
 from pbench.server import tstos
-from pbench.server.database.models.template import Template, TemplateNotFound
+from pbench.server.database.models.template import (
+    Template,
+    TemplateNotFound,
+)
 
 
 class JsonFile:
@@ -45,7 +49,7 @@ class JsonFile:
         self.json = None
 
     @staticmethod
-    def raw_json(json: Dict[AnyStr, Any]) -> "JsonFile":
+    def raw_json(json: Dict[AnyStr, Any], modified: datetime) -> "JsonFile":
         """
         An alternate constructor that can be loaded directly with a JSON
         document in order to capture the data from a Template DB object.
@@ -55,7 +59,27 @@ class JsonFile:
         """
         new = JsonFile()
         new.json = json
+        new.modified = modified
         return new
+
+    def extract_version(self, meta: JSON) -> str:
+        """
+        Extract the "version" field from a document mapping file's metadata.
+
+        Args:
+            meta: Mapping file metadata
+
+        Raises:
+            MappingFileError: "version" field is missing
+
+        Returns:
+            Mapping file version
+        """
+        try:
+            version = meta["version"]
+        except KeyError:
+            raise MappingFileError(f"missing version in {meta!r}")
+        return version
 
     def get_version(self) -> str:
         """
@@ -65,16 +89,15 @@ class JsonFile:
         context is under control of the TemplateFile class load methods.
 
         Raises:
-            MappingFileError: Mapping file doesn't contain proper version
+            MappingFileError: Mapping file doesn't contain metadata
 
         Returns:
             Template file metadata version
         """
         try:
-            version = self.json["_meta"]["version"]
+            return self.extract_version(self.json["_meta"])
         except KeyError as e:
             raise MappingFileError(f"mapping missing {e} in {self.file}: {self.json}")
-        return version
 
     def load(self) -> bool:
         """
@@ -101,15 +124,15 @@ class JsonFile:
 
     def merge(self, name: str, base: "JsonFile"):
         """
-        Base class implementation for merge. The base class has no associated
-        skeleton document to merge but this no-op implementation allows merge
-        to be called on any JsonFile.
+        Merge a tool-specific sub-document into the common base Elasticsearch
+        template document by linking the tool's mapping and meta-version into
+        a copy of the base document.
 
         Args:
             name: property name
             base: The base JsonFile
         """
-        pass
+        raise NotImplementedError(f"{type(self).__name__} doesn't implement merge")
 
     def add_mapping(self, name: str, body: Dict[AnyStr, Any]):
         """
@@ -169,11 +192,7 @@ class JsonToolFile(JsonFile):
         Returns:
             Template file metadata version
         """
-        try:
-            version = self.meta["version"]
-        except KeyError as e:
-            raise MappingFileError(f"mapping missing {e} in {self.file}: {self.meta}")
-        return version
+        return self.extract_version(self.meta)
 
     def merge(self, name: str, base: JsonFile):
         """
@@ -291,9 +310,9 @@ class TemplateFile:
 
     def __init__(
         self,
-        prefix: str = None,
-        mappings: Path = None,
-        settings: JsonFile = None,
+        prefix: str,
+        mappings: Path,
+        settings: JsonFile,
         skeleton: JsonFile = None,
         tool: str = None,
     ):
@@ -312,9 +331,16 @@ class TemplateFile:
             settings: JSON index settings. Defaults to None.
             skeleton: A versionless skeleton mappings file to merge with the tool
                 mappings.
-            tool: Tool mapping files stitch together mapping JSON from the
-                main and skeleton templates using a parsed "tool" name.
+            tool: The key in the index_patterns dict differs from the actual
+                tool name: e.g., all "tool" documents share the "tool-data" tool
+                name.
         """
+        # NOTE: we really don't want prefix to be None, but it is in some CLI
+        # unit tests and it's not worth the churn to fix that.
+        if mappings is None or settings is None:
+            raise TemplateError(
+                f"Missing parameters MAPPINGS={mappings}, SETTINGS={settings}"
+            )
         self.prefix = prefix
         self.settings = settings
         if tool:
@@ -326,7 +352,12 @@ class TemplateFile:
             self.mappings = JsonFile(mappings)
             self.name = mappings.stem
             self.key = self.name
-        self.index_info = self.index_patterns[self.key]
+        try:
+            self.index_info = self.index_patterns[self.key]
+        except KeyError:
+            raise TemplateError(
+                f"Template {self.name} (key {self.key}) does not resolve to a known index pattern"
+            )
         self.idxname = self.index_info["idxname"].format(tool=self.name)
         self.version = None
         self.tool = tool
@@ -407,8 +438,8 @@ class TemplateFile:
         """
         self.modified = template.mtime
         self.version = template.version
-        self.mappings = JsonFile.raw_json(template.mappings)
-        self.settings = JsonFile.raw_json(template.settings)
+        self.mappings = JsonFile.raw_json(template.mappings, template.mtime)
+        self.settings = JsonFile.raw_json(template.settings, template.mtime)
         self.template_name = template.template_name
         self.index_pattern = template.template_pattern
         self.index_template = template.index_template
@@ -431,9 +462,10 @@ class TemplateFile:
             self.update(template)
             return
 
-        # If the DB version is missing, or older than the on-disk JSON, we need
-        # to fully resolve the mapping files. If we found an older DB object,
-        # update it with the new data, otherwise we create a new Template object.
+        # We didn't return, so the DB template is missing or older than the
+        # on-disk JSON. We now need to fully resolve the mapping files. If we
+        # found an older DB object, we'll update it with the new data;
+        # otherwise we'll create a new Template object.
         self.load()
         if not template:
             template = Template(
@@ -455,12 +487,13 @@ class TemplateFile:
             template.mtime = self.modified
             template.update()
 
-    def generate_index_name(self, source, toolname=None):
+    def generate_index_name(self, source) -> str:
         """
-        Return a fully formed index name given its template, prefix, source
-        data (for an @timestamp field) and an optional tool name.
+        Return a fully formed index name for the template given a source
+        document and an optional tool name
 
         Args:
+            source: JSON source document providing an @timestamp
 
         Raises:
             TemplateError: A problem with the index template descriptor.
@@ -474,12 +507,9 @@ class TemplateFile:
 
         try:
             ts_val = source["@timestamp"]
-        except KeyError:
-            raise BadDate(f"missing @timestamp in a source document: {source!r}")
-        except TypeError as e:
-            raise JsonFileError(
-                f"Failed to generate index name, {e}, source: {source!r}"
-            )
+        except KeyError as e:
+            raise BadDate(f"missing {e} in a source document: {source!r}")
+
         year, month, day = ts_val.split("T", 1)[0].split("-")[0:3]
         return self.index_template.format(
             prefix=self.prefix,
@@ -512,12 +542,29 @@ class PbenchTemplates:
     """
 
     def __init__(self, basepath, idx_prefix, logger, known_tool_handlers=None, _dbg=0):
-        # Determine the location of the mapping and settings files. We expect
-        # the "basepath" parameter to be the PbenchServerConfig BINDIR attr,
-        # which will be something like /opt/pbench-server/bin
+        """
+        This contains the embedded knowledge of how the Pbench server defines
+        and managed Elasticsearch template documents and indices. It relies on
+        secondary classes to encapsulate low-level mechanism to deal with each
+        template and the associated JSON data.
+
+        This class, for example, understands which template patterns share a
+        particular file describing Elasticsearch index settings, and which
+        template documents are derived from common skeleton mappings.
+
+        Args:
+            basepath:               The base Pbench server installation
+                                    directory
+            idx_prefix:             The server's Elasticsearch index prefix
+            logger:                 A Python Logger
+            known_tool_handlers:    Describes the set of tools that will have
+                                    templates generated from a common tool-data
+                                    skeleton.
+            _dbg:                   Debug level for output (historical: not
+                                    used)
+        """
         base_dir = Path(basepath).parent / "lib"
         mapping_dir = base_dir / "mappings"
-        # Where to find the settings
         setting_dir = base_dir / "settings"
 
         self.versions = {}
@@ -641,9 +688,7 @@ class PbenchTemplates:
         List all of the registered template documents
         """
         templates = {t.template_name: t for t in self.templates.values()}
-        template_names = [name for name in templates]
-        template_names.sort()
-        for name in template_names:
+        for name in sorted(templates.keys()):
             print(
                 "\n\nTemplate: {}\n\n{}\n".format(
                     name, json.dumps(templates[name].body(), indent=4, sort_keys=True)
@@ -655,17 +700,22 @@ class PbenchTemplates:
         """
         Register with Elasticsearch the set of index templates used by the
         Pbench server.
+
+        Args
+            es:             Elasticsearch object to connect to server
+            target_name:    Optional template name to update just one template
+
+        Raises
+            TemplateError   Problem updating the template to server
         """
         if target_name is not None:
             idxname = TemplateFile.index_patterns[target_name]["idxname"]
         else:
             idxname = None
         template_names = {t.template_name: t for t in self.templates.values()}
-        names = list(template_names.keys())
-        names.sort()
         successes = retries = 0
         beg = end = None
-        for name in names:
+        for name in sorted(template_names.keys()):
             template = template_names[name]
             if idxname is not None and not target_name == template.idxname:
                 # If we were asked to only load a given template name, skip
@@ -695,10 +745,21 @@ class PbenchTemplates:
             retries,
         )
 
-    def generate_index_name(self, template_name, source, toolname=None):
+    def generate_index_name(self, template_name, source, toolname=None) -> str:
         """
         Return a fully formed index name given its template, prefix, source
         data (for an @timestamp field) and an optional tool name.
+
+        Args
+            template_name:  Name of template pattern
+            source:         JSON source document with @timestamp
+            toolname:       Shared tool skeleton name (optional)
+
+        Raises
+            Exception   Template name wasn't found
+
+        Returns
+            expanded index name including date
         """
         for t in self.templates.values():
             if t.key == template_name and (toolname is None or t.name == toolname):
@@ -711,7 +772,7 @@ class PbenchTemplates:
             )
 
         try:
-            return template.generate_index_name(source, toolname)
+            return template.generate_index_name(source)
         except BadDate:
             self.counters["ts_missing_at_timestamp"] += 1
             raise
