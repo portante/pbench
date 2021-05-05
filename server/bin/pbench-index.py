@@ -113,7 +113,7 @@ def main(options, name):
         Database.init_db(config, logger)
 
         # Now we can initialize the index context
-        idxctx = IdxContext(options, name, _dbg=_DEBUG)
+        idxctx = IdxContext(options, name, config, logger, _dbg=_DEBUG)
     except (ConfigFileError, ConfigParserError) as e:
         print(f"{name}: {e}", file=sys.stderr)
         return error_code["CFG_ERROR"].value
