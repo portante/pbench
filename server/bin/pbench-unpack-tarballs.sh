@@ -46,11 +46,9 @@ test -d ${INCOMING} || doexit "Bad INCOMING=${INCOMING}"
 test -d ${RESULTS} || doexit "Bad RESULTS=${RESULTS}"
 test -d ${USERS} || doexit "Bad USERS=${USERS}"
 
-# The link source and destination(s) for this script.
-linksrc=TO-UNPACK
+# The destination for this script are always the following.
 linkdest=UNPACKED
 linkerr=WONT-UNPACK
-linkdestlist=$(getconf.py -l unpacked-states pbench-server)
 
 BUCKET="${1}"
 if [[ -z "${BUCKET}" ]]; then
@@ -81,6 +79,20 @@ else
     # with other unpack tar balls running using different buckets at the same
     # time.
     export PROG="${PROG}-${BUCKET}"
+fi
+
+PIPELINE="${2}"
+if [[ "${PIPELINE}" == "re-unpack" ]]; then
+    # The link source for re-unpacking.
+    linksrc=TO-RE-UNPACK
+    # When re-unpacking, the default destination is enough.
+    linkdestlist=""
+else
+    # The link source for normal flow of unpacking.
+    linksrc=TO-UNPACK
+    # Read the system configuration for additional states when unpacking
+    # normally.
+    linkdestlist=$(getconf.py -l unpacked-states pbench-server)
 fi
 
 tmp=${TMP}/${PROG}.${$}
