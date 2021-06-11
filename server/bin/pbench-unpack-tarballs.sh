@@ -46,7 +46,7 @@ test -d ${INCOMING} || doexit "Bad INCOMING=${INCOMING}"
 test -d ${RESULTS} || doexit "Bad RESULTS=${RESULTS}"
 test -d ${USERS} || doexit "Bad USERS=${USERS}"
 
-# The destination for this script are always the following.
+# The base destinations for this script are always the following:
 linkdest=UNPACKED
 linkerr=WONT-UNPACK
 

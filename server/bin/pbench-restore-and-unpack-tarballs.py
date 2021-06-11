@@ -84,8 +84,10 @@ def gen_list(backup):
                     )
                     tb = Path(entry.path[:-4])
                     if not tb.exists():
-                        print(f"what? {entry.path}")
-                        sys.exit(1)
+                        raise Exception(
+                            f"Tar ball .md5, '{entry.path}', does not have"
+                            f" an associated tar ball, '{entry.path[:-4]}'"
+                        )
                     yield tb_dt, c_entry.name, tb
 
 
@@ -161,7 +163,12 @@ def main(options):
             # Create controller directory if it doesn't exist
             ctrl_p = archive_p / ctrl
             if not options.dry_run:
-                ctrl_p.mkdir(exist_ok=True)
+                try:
+                    ctrl_p.mkdir()
+                except FileExistsError:
+                    pass
+                else:
+                    print(f"\nCreated controller directory, '{ctrl_p}'", flush=True)
 
             # Copy tar ball to archive tree, along with its .md5 ...
             cp_cmd = f"cp -a {tb} {tb}.md5 {ctrl_p}/"
