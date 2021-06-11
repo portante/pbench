@@ -1,4 +1,4 @@
-#!/usr/libexec/platform-python
+#!/usr/bin/env python3
 # -*- mode: python -*-
 
 """Pbench Tar Balls & Unpack
@@ -37,11 +37,6 @@ from datetime import datetime
 from pathlib import Path
 
 import pbench
-from pbench import (
-    PbenchConfig,
-    BadConfig,
-    get_pbench_logger,
-)
 
 
 _NAME_ = "pbench-restore-and-unpack-tarballs"
@@ -101,19 +96,18 @@ def main(options):
         return 1
 
     try:
-        config = PbenchConfig(options.cfg_name)
-    except BadConfig as e:
+        config = pbench.PbenchConfig(options.cfg_name)
+    except pbench.BadConfig as e:
         print(f"{_NAME_}: {e}", file=sys.stderr)
         return 2
-
-    logger = get_pbench_logger(_NAME_, config)
 
     archive = config.ARCHIVE
     archive_p = Path(archive).resolve(strict=True)
 
     if not archive_p.is_dir():
-        logger.error(
-            "The configured ARCHIVE directory, {}, is not a valid directory", archive
+        print(
+            f"The configured ARCHIVE directory, {archive}, is not a valid" " directory",
+            file=sys.stderr,
         )
         return 4
 
@@ -121,19 +115,17 @@ def main(options):
     backup_p = Path(backup).resolve(strict=True)
 
     if not backup_p.is_dir():
-        logger.error(
-            "The configured pbench-backup-dir directory, {}, is not a valid directory",
-            backup,
+        print(
+            "The configured pbench-backup-dir directory, {backup}, is not a"
+            " valid directory",
+            file=sys.stderr,
         )
         return 6
 
     start = pbench._time()
 
-    _msg = f"Restoring tar balls from backup volume, {backup} (started at: {start})"
     if options.dry_run:
-        print(_msg)
-    else:
-        logger.debug(_msg)
+        print(f"Restoring tar balls from backup volume, {backup} (started at: {start})")
 
     gen = gen_list(backup_p)
     tbs_sorted = sorted(
@@ -225,11 +217,11 @@ def main(options):
             raise
 
     end = pbench._time()
-    _msg = f"Restored {tbs_restored:d} tar balls from backup volume, {backup} (ended at: {end}, elapsed ({end - start:d})"
     if options.dry_run:
-        print(_msg)
-    else:
-        logger.debug(_msg)
+        print(
+            f"Restored {tbs_restored:d} tar balls from backup volume,"
+            f" {backup} (ended at: {end}, elapsed ({end - start:0.2f})"
+        )
 
     sys.exit(0)
 

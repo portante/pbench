@@ -89,7 +89,10 @@ len(actions) = 1
 ]
 --- Finished pbench-dispatch (status=0)
 +++ Running pbench-unpack-tarballs small
-pbench-unpack-tarballs: Bad INCOMING=/var/tmp/pbench-test-server/test-2/pbench/public_html/incoming
+pbench-unpack-tarballs-small: Bad INCOMING=/var/tmp/pbench-test-server/test-2/pbench/public_html/incoming
+--- Finished pbench-unpack-tarballs (status=1)
++++ Running pbench-unpack-tarballs none re-unpack
+pbench-re-unpack-tarballs: Bad INCOMING=/var/tmp/pbench-test-server/test-2/pbench/public_html/incoming
 --- Finished pbench-unpack-tarballs (status=1)
 +++ Running pbench-copy-sosreports
 pbench-copy-sosreports: Bad INCOMING=/var/tmp/pbench-test-server/test-2/pbench/public_html/incoming

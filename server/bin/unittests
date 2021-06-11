@@ -63,6 +63,11 @@ function _run_re_indexing {
     _run pbench-index --re-index
 }
 
+function _run_re_unpack {
+    _run pbench-restore-and-unpack-tarballs ${1}
+    _run pbench-unpack-tarballs none re-unpack
+}
+
 function _run_activate {
     # Testing the server activate script, which is used for every other
     # unit test as well is just a matter of emitting the resulting
@@ -98,6 +103,7 @@ function _run_allscripts {
     # These next five are related and would flow in this order
     _run pbench-dispatch
     _run pbench-unpack-tarballs small
+    _run pbench-unpack-tarballs none re-unpack
     _run pbench-copy-sosreports
     _run pbench-index
     _run pbench-index --tool-data
@@ -727,9 +733,13 @@ declare -A cmds=(
     # shim - failure, no reception area
     [test-15]="_run pbench-server-prep-shim-002"
 
-    # pbench-unpack-tarballs unpacking to the incoming directory
+    # unpacking to the incoming directory
     [test-16]="_run pbench-unpack-tarballs small"
     [test-17]="_run pbench-unpack-tarballs small"
+
+    # re-unpacking tar balls to the incoming directory
+    [test-18]="_run_re_unpack --dry-run"
+    [test-19]="_run_re_unpack"
 
     [test-20]="_run echo audit archive hierarchy"
 

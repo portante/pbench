@@ -37,6 +37,21 @@
 # symlink from $ARCHIVE/TODO to $ARCHIVE/TO-COPY-SOS.
 
 
+BUCKET="${1}"
+PIPELINE="${2}"
+
+if [[ "${PIPELINE}" == "re-unpack" ]]; then
+    export PROG="pbench-re-unpack-tarballs"
+fi
+if [[ -z "${BUCKET}" || "${BUCKET}" == "none" ]]; then
+    export PROG="${PROG}"
+else
+    # We rename the PROG to include the bucket since we don't want to conflict
+    # with other unpack tar balls running using different buckets at the same
+    # time.
+    export PROG="${PROG}-${BUCKET}"
+fi
+
 # load common things
 . ${dir}/pbench-base.sh
 
@@ -50,13 +65,11 @@ test -d ${USERS} || doexit "Bad USERS=${USERS}"
 linkdest=UNPACKED
 linkerr=WONT-UNPACK
 
-BUCKET="${1}"
-if [[ -z "${BUCKET}" ]]; then
+if [[ -z "${BUCKET}" || "${BUCKET}" == "none" ]]; then
     lb_arg=""
     ub_arg=""
     lowerbound=0
     upperbound=""
-    export PROG="${PROG}"
 else
     lowerbound=$(getconf.py lowerbound pbench-unpack-tarballs/${BUCKET})
     if [[ -z "${lowerbound}" ]]; then
@@ -75,13 +88,8 @@ else
         upperbound=$(( ${upperbound} * 1024 * 1024 ))
         ub_arg="-size -$(( ${upperbound} ))c"
     fi
-    # We rename the PROG to include the bucket since we don't want to conflict
-    # with other unpack tar balls running using different buckets at the same
-    # time.
-    export PROG="${PROG}-${BUCKET}"
 fi
 
-PIPELINE="${2}"
 if [[ "${PIPELINE}" == "re-unpack" ]]; then
     # The link source for re-unpacking.
     linksrc=TO-RE-UNPACK

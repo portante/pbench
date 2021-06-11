@@ -89,7 +89,10 @@ len(actions) = 1
 ]
 --- Finished pbench-dispatch (status=0)
 +++ Running pbench-unpack-tarballs small
-pbench-unpack-tarballs: Bad USERS=/var/tmp/pbench-test-server/test-4/pbench/public_html/users
+pbench-unpack-tarballs-small: Bad USERS=/var/tmp/pbench-test-server/test-4/pbench/public_html/users
+--- Finished pbench-unpack-tarballs (status=1)
++++ Running pbench-unpack-tarballs none re-unpack
+pbench-re-unpack-tarballs: Bad USERS=/var/tmp/pbench-test-server/test-4/pbench/public_html/users
 --- Finished pbench-unpack-tarballs (status=1)
 +++ Running pbench-copy-sosreports
 Template:  pbench-unittests.v3.server-reports
