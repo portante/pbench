@@ -166,7 +166,7 @@ def main(options):
             cp_cmd = f"cp -a {tb} {tb}.md5 {ctrl_p}/"
             print(f"\n{cp_cmd}", flush=True)
             if not options.dry_run:
-                cp = subprocess.run(cp_cmd, shell=True, stderr=subprocess.STDOUT)
+                cp = subprocess.run(cp_cmd.replace('"', '\\"').replace("'", "\\'"), shell=True, stderr=subprocess.STDOUT)
                 if cp.returncode != 0:
                     print(
                         f"FAILURE: cp command: '{cp_cmd}': {cp.returncode}, {cp.stdout!r}",
@@ -177,7 +177,7 @@ def main(options):
             md5sum_cmd = f"md5sum --check {a_tb}.md5"
             print(md5sum_cmd, flush=True)
             if not options.dry_run:
-                cp = subprocess.run(md5sum_cmd, shell=True, cwd=str(ctrl_p))
+                cp = subprocess.run(md5sum_cmd.replace('"', '\\"').replace("'", "\\'"), shell=True, cwd=str(ctrl_p))
                 if cp.returncode != 0:
                     print(
                         f"FAILURE: md5sum command: '{md5sum_cmd}': {cp.returncode}, {cp.stdout!r}",
