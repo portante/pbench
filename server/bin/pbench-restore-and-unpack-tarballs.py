@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- mode: python -*-
 
-"""Pbench Tar Balls & Unpack
+"""Pbench Restore & Unpack Tar Balls
 
 The goal is to find all tar balls that are in the backup tree and restore them
 to the archive tree, unpacking as appropriate (left to the unpack process to
@@ -17,21 +17,23 @@ The general algorithm is:
 
      a. Check if tar ball exists in archive tree, if so, skip
 
-     b. Copy tar ball to archive tree, and .md5 and run md5sum check
+     b. Copy tar ball and .md5 to archive tree and run md5sum check
 
-        * Create controller directory if it doesn't exist
+        * Creating the controller directory if it doesn't already exist
 
-        * Create TO-RE-UNPACK and BACKED-UP directories if they don't exist
+     c. Create symlink to tar ball in BACKED-UP directory
+
+        * Creating the BACKED-UP directory if it doesn't already exist
 
      c. Create symlink to tar ball in TO-RE-UNPACK directory
 
-  4. After processing 10 tar balls, wait for # of TO-RE-UNPACK to drop to zero
+        * Creating the TO-RE-UNPACK directory if it doesn't already exist
 """
 
-import sys
 import os
 import re
 import subprocess
+import sys
 from argparse import ArgumentParser
 from datetime import datetime
 from pathlib import Path
@@ -46,21 +48,19 @@ tb_pat = re.compile(tb_pat_r)
 
 
 def gen_list(backup):
-    """gen_list - traverse the given BACKUP hierarchy looking for all tar balls
-    that have a .md5 file.
+    """Traverse the given BACKUP hierarchy looking for all tar balls that have
+    a .md5 file.
     """
     with os.scandir(backup) as backup_scan:
         for c_entry in backup_scan:
-            if c_entry.name.startswith(".") and c_entry.is_dir(follow_symlinks=False):
+            if c_entry.name.startswith("."):
                 continue
             if not c_entry.is_dir(follow_symlinks=False):
                 continue
             # We have a controller directory.
             with os.scandir(c_entry.path) as controller_scan:
                 for entry in controller_scan:
-                    if entry.name.startswith(".") and entry.is_dir(
-                        follow_symlinks=False
-                    ):
+                    if entry.name.startswith("."):
                         continue
                     if entry.is_dir(follow_symlinks=False):
                         continue
@@ -93,7 +93,7 @@ def main(options):
             " _PBENCH_SERVER_CONFIG env variable",
             file=sys.stderr,
         )
-        return 1
+        return 2
 
     try:
         config = pbench.PbenchConfig(options.cfg_name)
@@ -106,10 +106,10 @@ def main(options):
 
     if not archive_p.is_dir():
         print(
-            f"The configured ARCHIVE directory, {archive}, is not a valid" " directory",
-            file=sys.stderr,
+            f"The configured ARCHIVE directory, {archive}, is not a valid directory",
+            file=sys.stderr
         )
-        return 4
+        return 2
 
     backup = config.conf.get("pbench-server", "pbench-backup-dir")
     backup_p = Path(backup).resolve(strict=True)
@@ -120,12 +120,11 @@ def main(options):
             " valid directory",
             file=sys.stderr,
         )
-        return 6
+        return 2
 
     start = pbench._time()
 
-    if options.dry_run:
-        print(f"Restoring tar balls from backup volume, {backup} (started at: {start})")
+    print(f"Restoring tar balls from backup volume, {backup} (started at: {start})")
 
     gen = gen_list(backup_p)
     tbs_sorted = sorted(
@@ -147,7 +146,7 @@ def main(options):
             if a_tb.exists():
                 tbs_existing += 1
                 print(
-                    f"Exists {tbs_existing:d} ({tbs_restored:d} restored) of (tbs_cnt:d): {a_tb}",
+                    f"Exists {tbs_existing:d} ({tbs_restored:d} restored) of ({tbs_cnt:d}): {a_tb}",
                     flush=True,
                 )
                 continue
@@ -166,24 +165,36 @@ def main(options):
             cp_cmd = f"cp -a {tb} {tb}.md5 {ctrl_p}/"
             print(f"\n{cp_cmd}", flush=True)
             if not options.dry_run:
-                cp = subprocess.run(cp_cmd.replace('"', '\\"').replace("'", "\\'"), shell=True, stderr=subprocess.STDOUT)
+                cp = subprocess.run(
+                    cp_cmd.replace('"', '\\"').replace("'", "\\'"),
+                    shell=True,
+                    stderr=subprocess.STDOUT
+                )
                 if cp.returncode != 0:
                     print(
                         f"FAILURE: cp command: '{cp_cmd}': {cp.returncode}, {cp.stdout!r}",
                         file=sys.stderr,
                     )
-                    sys.exit(1)
+                    return 1
             # ... and run md5sum check against it
             md5sum_cmd = f"md5sum --check {a_tb}.md5"
             print(md5sum_cmd, flush=True)
             if not options.dry_run:
-                cp = subprocess.run(md5sum_cmd.replace('"', '\\"').replace("'", "\\'"), shell=True, cwd=str(ctrl_p))
+                # NOTE: we have to set the current working directory for the
+                # md5sum --check command to the controller directory since the
+                # contents of the .md5 file uses a relative file reference.
+                cp = subprocess.run(
+                    md5sum_cmd.replace('"', '\\"').replace("'", "\\'"),
+                    shell=True,
+                    stderr=subprocess.STDOUT,
+                    cwd=str(ctrl_p)
+                )
                 if cp.returncode != 0:
                     print(
                         f"FAILURE: md5sum command: '{md5sum_cmd}': {cp.returncode}, {cp.stdout!r}",
                         file=sys.stderr,
                     )
-                    sys.exit(1)
+                    return 1
 
             # Create the symlink recording the tar ball is already backed up
             backed_up_dir = ctrl_p / "BACKED-UP"
@@ -217,13 +228,12 @@ def main(options):
             raise
 
     end = pbench._time()
-    if options.dry_run:
-        print(
-            f"Restored {tbs_restored:d} tar balls from backup volume,"
-            f" {backup} (ended at: {end}, elapsed ({end - start:0.2f})"
-        )
+    print(
+        f"Restored {tbs_restored:d} tar balls from backup volume,"
+        f" {backup} (ended at: {end}, elapsed: {end - start:0.2f})"
+    )
 
-    sys.exit(0)
+    return 0
 
 
 if __name__ == "__main__":

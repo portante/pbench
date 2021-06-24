@@ -1,4 +1,5 @@
 +++ Running pbench-restore-and-unpack-tarballs
+Restoring tar balls from backup volume, /var/tmp/pbench-test-server/test-19/pbench-local/archive.backup (started at: 42.0)
 
 Created controller directory, '/var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00'
 
@@ -30,6 +31,7 @@ ln -s /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00/
 
 Restored 3 (0 existing) of (3): /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00/tarball_config-00_1970.01.01T00.00.40.tar.xz
 
+Restored 3 tar balls from backup volume, /var/tmp/pbench-test-server/test-19/pbench-local/archive.backup (ended at: 42.0, elapsed: 0.00)
 --- Finished pbench-restore-and-unpack-tarballs (status=0)
 +++ Running pbench-unpack-tarballs none re-unpack
 Template:  pbench-unittests.v3.server-reports
@@ -83,9 +85,9 @@ len(actions) = 1
             "chunk_id": 1,
             "doctype": "status",
             "name": "pbench-audit-server",
-            "text": "pbench-audit-server.run-1970-01-01T00:00:42-UTC(unit-test)\n",
+            "text": "pbench-audit-server.run-1970-01-01T00:00:42-UTC (unit-test) - Successful audit, nothing to report.\n",
             "total_chunks": 1,
-            "total_size": 59
+            "total_size": 99
         },
         "_type": "pbench-server-reports"
     }
