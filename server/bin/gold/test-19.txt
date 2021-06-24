@@ -9,10 +9,8 @@ tarball_config-01_1970.01.01T00.00.42.tar.xz: OK
 ln -s /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00/tarball_config-01_1970.01.01T00.00.42.tar.xz /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00/BACKED-UP/tarball_config-01_1970.01.01T00.00.42.tar.xz
 ln -s /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00/tarball_config-01_1970.01.01T00.00.42.tar.xz /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00/TO-RE-UNPACK/tarball_config-01_1970.01.01T00.00.42.tar.xz
 
-Restored 1 (0 existing) of (3): /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00/tarball_config-01_1970.01.01T00.00.42.tar.xz
+Restored 1 (0 existing) of (4): /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00/tarball_config-01_1970.01.01T00.00.42.tar.xz
 
-
-Created controller directory, '/var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-01'
 
 cp -a /var/tmp/pbench-test-server/test-19/pbench-local/archive.backup/ctrl-01/tarball_config-02_1970.01.01T00.00.41.tar.xz /var/tmp/pbench-test-server/test-19/pbench-local/archive.backup/ctrl-01/tarball_config-02_1970.01.01T00.00.41.tar.xz.md5 /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-01/
 md5sum --check /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-01/tarball_config-02_1970.01.01T00.00.41.tar.xz.md5
@@ -20,7 +18,7 @@ tarball_config-02_1970.01.01T00.00.41.tar.xz: OK
 ln -s /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-01/tarball_config-02_1970.01.01T00.00.41.tar.xz /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-01/BACKED-UP/tarball_config-02_1970.01.01T00.00.41.tar.xz
 ln -s /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-01/tarball_config-02_1970.01.01T00.00.41.tar.xz /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-01/TO-RE-UNPACK/tarball_config-02_1970.01.01T00.00.41.tar.xz
 
-Restored 2 (0 existing) of (3): /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-01/tarball_config-02_1970.01.01T00.00.41.tar.xz
+Restored 2 (0 existing) of (4): /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-01/tarball_config-02_1970.01.01T00.00.41.tar.xz
 
 
 cp -a /var/tmp/pbench-test-server/test-19/pbench-local/archive.backup/ctrl-00/tarball_config-00_1970.01.01T00.00.40.tar.xz /var/tmp/pbench-test-server/test-19/pbench-local/archive.backup/ctrl-00/tarball_config-00_1970.01.01T00.00.40.tar.xz.md5 /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00/
@@ -29,8 +27,9 @@ tarball_config-00_1970.01.01T00.00.40.tar.xz: OK
 ln -s /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00/tarball_config-00_1970.01.01T00.00.40.tar.xz /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00/BACKED-UP/tarball_config-00_1970.01.01T00.00.40.tar.xz
 ln -s /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00/tarball_config-00_1970.01.01T00.00.40.tar.xz /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00/TO-RE-UNPACK/tarball_config-00_1970.01.01T00.00.40.tar.xz
 
-Restored 3 (0 existing) of (3): /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00/tarball_config-00_1970.01.01T00.00.40.tar.xz
+Restored 3 (0 existing) of (4): /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-00/tarball_config-00_1970.01.01T00.00.40.tar.xz
 
+Exists 1 (3 restored) of (4): /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-01/tarball_config-exists_1970.01.01T00.00.39.tar.xz
 Restored 3 tar balls from backup volume, /var/tmp/pbench-test-server/test-19/pbench-local/archive.backup (ended at: 42.0, elapsed: 0.00)
 --- Finished pbench-restore-and-unpack-tarballs (status=0)
 +++ Running pbench-unpack-tarballs none re-unpack
@@ -159,6 +158,7 @@ drwxrwxr-x          - archive/fs-version-001/ctrl-00/WONT-UNPACK
 drwxrwxr-x          - archive/fs-version-001/ctrl-01
 drwxrwxr-x          - archive/fs-version-001/ctrl-01/BACKED-UP
 lrwxrwxrwx        118 archive/fs-version-001/ctrl-01/BACKED-UP/tarball_config-02_1970.01.01T00.00.41.tar.xz -> /var/tmp/pbench-test-server/test-19/pbench/archive/fs-version-001/ctrl-01/tarball_config-02_1970.01.01T00.00.41.tar.xz
+lrwxrwxrwx         51 archive/fs-version-001/ctrl-01/BACKED-UP/tarball_config-exists_1970.01.01T00.00.39.tar.xz -> ../tarball_config-exists_1970.01.01T00.00.39.tar.xz
 drwxrwxr-x          - archive/fs-version-001/ctrl-01/BACKUP-FAILED
 drwxrwxr-x          - archive/fs-version-001/ctrl-01/BAD-MD5
 drwxrwxr-x          - archive/fs-version-001/ctrl-01/COPIED-SOS
@@ -184,6 +184,8 @@ drwxrwxr-x          - archive/fs-version-001/ctrl-01/WONT-INDEX
 drwxrwxr-x          - archive/fs-version-001/ctrl-01/WONT-UNPACK
 -rw-rw-r--        228 archive/fs-version-001/ctrl-01/tarball_config-02_1970.01.01T00.00.41.tar.xz
 -rw-rw-r--         79 archive/fs-version-001/ctrl-01/tarball_config-02_1970.01.01T00.00.41.tar.xz.md5
+-rw-rw-r--        232 archive/fs-version-001/ctrl-01/tarball_config-exists_1970.01.01T00.00.39.tar.xz
+-rw-rw-r--         83 archive/fs-version-001/ctrl-01/tarball_config-exists_1970.01.01T00.00.39.tar.xz.md5
 drwxrwxr-x          - public_html
 drwxrwxr-x          - public_html/incoming
 drwxrwxr-x          - public_html/incoming/ctrl-00
@@ -230,6 +232,8 @@ drwxrwxr-x          - archive.backup/ctrl-00
 drwxrwxr-x          - archive.backup/ctrl-01
 -rw-rw-r--        228 archive.backup/ctrl-01/tarball_config-02_1970.01.01T00.00.41.tar.xz
 -rw-rw-r--         79 archive.backup/ctrl-01/tarball_config-02_1970.01.01T00.00.41.tar.xz.md5
+-rw-rw-r--        232 archive.backup/ctrl-01/tarball_config-exists_1970.01.01T00.00.39.tar.xz
+-rw-rw-r--         83 archive.backup/ctrl-01/tarball_config-exists_1970.01.01T00.00.39.tar.xz.md5
 drwxrwxr-x          - logs
 drwxrwxr-x          - logs/pbench-audit-server
 -rw-rw-r--          0 logs/pbench-audit-server/pbench-audit-server.error
