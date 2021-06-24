@@ -37,15 +37,13 @@
 # symlink from $ARCHIVE/TODO to $ARCHIVE/TO-COPY-SOS.
 
 
-BUCKET="${1}"
+BUCKET="${1:-none}"
 PIPELINE="${2}"
 
 if [[ "${PIPELINE}" == "re-unpack" ]]; then
     export PROG="pbench-re-unpack-tarballs"
 fi
-if [[ -z "${BUCKET}" || "${BUCKET}" == "none" ]]; then
-    export PROG="${PROG}"
-else
+if [[ "${BUCKET}" != "none" ]]; then
     # We rename the PROG to include the bucket since we don't want to conflict
     # with other unpack tar balls running using different buckets at the same
     # time.
@@ -65,7 +63,7 @@ test -d ${USERS} || doexit "Bad USERS=${USERS}"
 linkdest=UNPACKED
 linkerr=WONT-UNPACK
 
-if [[ -z "${BUCKET}" || "${BUCKET}" == "none" ]]; then
+if [[ "${BUCKET}" == "none" ]]; then
     lb_arg=""
     ub_arg=""
     lowerbound=0
